@@ -1,0 +1,904 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Barbearia da Vinte: agende corte, barba e outros servicos direto pelo site." />
+  <title>Barbearia da Vinte | Agendamento online</title>
+  <style>
+    :root {
+      --bg: #030303;
+      --ink: #f6f2e9;
+      --muted: #aaa49a;
+      --gold: #b59a66;
+      --gold-2: #d4bc82;
+      --panel: rgba(16, 16, 16, 0.9);
+      --panel-2: rgba(26, 24, 22, 0.88);
+      --line: rgba(181, 154, 102, 0.25);
+      --danger: #ff7d6b;
+      --ok: #75d59a;
+      --shadow: 0 26px 80px rgba(0, 0, 0, 0.55);
+      --max: 1180px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      min-height: 100vh;
+      font-family: "Segoe UI", Arial, sans-serif;
+      color: var(--ink);
+      background: #000;
+      overflow-x: hidden;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background:
+        linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px),
+        linear-gradient(rgba(255,255,255,0.018) 1px, transparent 1px);
+      background-size: 72px 72px;
+      opacity: 0.45;
+      mask-image: linear-gradient(#000, transparent 78%);
+    }
+    a { color: inherit; text-decoration: none; }
+    button, input, select, textarea { font: inherit; }
+    button { border: 0; cursor: pointer; color: inherit; }
+    img { display: block; max-width: 100%; }
+    .container { width: min(var(--max), calc(100% - 34px)); margin: 0 auto; }
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background: rgba(0,0,0,0.84);
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      backdrop-filter: blur(16px);
+    }
+    .nav {
+      min-height: 76px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+    .brand img { width: 94px; height: 54px; object-fit: contain; }
+    .menu { display: flex; align-items: center; gap: 30px; color: #c7c0b7; font-size: 0.88rem; letter-spacing: 0.08em; text-transform: uppercase; }
+    .menu a { position: relative; }
+    .menu a::after { content: ""; position: absolute; left: 0; right: 0; bottom: -11px; height: 2px; background: var(--gold); transform: scaleX(0); transition: 0.2s; }
+    .menu a:hover::after { transform: scaleX(1); }
+    .admin-open {
+      border: 1px solid var(--gold);
+      background: transparent;
+      padding: 13px 18px;
+      color: var(--gold-2);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-size: 0.82rem;
+      border-radius: 3px;
+    }
+    .hero {
+      position: relative;
+      min-height: 760px;
+      padding: 72px 0 34px;
+      background:
+        linear-gradient(90deg, #000 0%, rgba(0,0,0,0.88) 32%, rgba(0,0,0,0.45) 70%, #000 100%),
+        url("/static/img/logo-barbeiro.jpg.jpeg") center 20% / min(760px, 72vw) auto no-repeat,
+        radial-gradient(circle at 84% 26%, rgba(181,154,102,0.24), transparent 20%),
+        linear-gradient(135deg, #090909, #050505);
+      border-bottom: 1px solid rgba(181,154,102,0.18);
+    }
+    .hero::after {
+      content: "";
+      position: absolute;
+      inset: auto 0 0;
+      height: 250px;
+      background: linear-gradient(transparent, #000 82%);
+      pointer-events: none;
+    }
+    .hero-grid {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 310px;
+      gap: 48px;
+      align-items: start;
+    }
+    .eyebrow {
+      color: var(--gold-2);
+      letter-spacing: 0.34em;
+      text-transform: uppercase;
+      font-weight: 800;
+      font-size: 0.76rem;
+    }
+    h1 {
+      margin-top: 20px;
+      font-size: clamp(3.2rem, 9vw, 7.6rem);
+      line-height: 0.9;
+      text-transform: uppercase;
+      letter-spacing: 0;
+      max-width: 620px;
+      text-shadow: 0 8px 38px rgba(0,0,0,0.7);
+    }
+    .hero-sub { margin-top: 20px; color: #d8d1c7; max-width: 520px; font-size: 1.1rem; line-height: 1.8; }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      min-height: 48px;
+      padding: 0 22px;
+      border-radius: 4px;
+      background: var(--gold);
+      color: #111;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      font-size: 0.86rem;
+      transition: 0.2s ease;
+    }
+    .btn:hover { background: var(--gold-2); transform: translateY(-1px); }
+    .btn.secondary { background: transparent; color: var(--gold-2); border: 1px solid var(--gold); }
+    .btn.ghost { background: rgba(255,255,255,0.06); color: var(--ink); border: 1px solid rgba(255,255,255,0.1); }
+    .hero-actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 26px; }
+    .info-card {
+      margin-top: 36px;
+      background: rgba(11,11,11,0.82);
+      border: 1px solid rgba(181,154,102,0.23);
+      box-shadow: var(--shadow);
+      padding: 26px;
+      border-radius: 4px;
+    }
+    .info-line { display: grid; grid-template-columns: 36px 1fr; gap: 14px; padding: 16px 0; border-bottom: 1px solid rgba(255,255,255,0.07); color: #d1cbc2; }
+    .info-line:last-child { border-bottom: 0; }
+    .ico { color: var(--gold-2); font-size: 1.4rem; }
+    .info-line strong { display: block; color: var(--ink); margin-bottom: 4px; text-transform: uppercase; font-size: 0.78rem; letter-spacing: 0.1em; }
+    .quick {
+      position: relative;
+      z-index: 2;
+      margin-top: 44px;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      background: rgba(18,18,18,0.94);
+      border: 1px solid rgba(255,255,255,0.08);
+      box-shadow: var(--shadow);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .quick-item { min-height: 98px; display: grid; grid-template-columns: 54px 1fr; gap: 15px; align-items: center; padding: 22px; border-right: 1px dashed rgba(255,255,255,0.13); }
+    .quick-item:last-child { border-right: 0; }
+    .quick-item .ico { font-size: 2rem; color: #eee; }
+    .quick-item strong { display: block; text-transform: uppercase; font-size: 0.82rem; }
+    .quick-item span { display: block; color: var(--muted); margin-top: 5px; line-height: 1.45; font-size: 0.9rem; }
+    section { position: relative; padding: 78px 0; background: #000; }
+    .section-head { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin-bottom: 30px; }
+    .section-head h2 { font-size: clamp(1.8rem, 4vw, 3.1rem); line-height: 1; text-transform: uppercase; }
+    .section-head p { color: var(--muted); max-width: 520px; line-height: 1.7; }
+    .section-head h2::after { content: ""; display: block; width: 70px; height: 2px; margin-top: 14px; background: var(--gold); }
+    .services { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+    .service-card, .barber-card {
+      background: linear-gradient(180deg, rgba(28,28,28,0.95), rgba(10,10,10,0.95));
+      border: 1px solid rgba(255,255,255,0.09);
+      border-radius: 5px;
+      padding: 20px;
+      min-height: 154px;
+    }
+    .service-card strong { display: block; text-transform: uppercase; margin-bottom: 10px; }
+    .service-card p { color: var(--muted); line-height: 1.55; font-size: 0.92rem; min-height: 44px; }
+    .price { color: var(--gold-2); font-weight: 900; margin-top: 16px; }
+    .barbers { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+    .barber-photo {
+      height: 170px;
+      border-radius: 4px;
+      background:
+        linear-gradient(rgba(0,0,0,0.12), rgba(0,0,0,0.55)),
+        radial-gradient(circle at 50% 10%, rgba(255,255,255,0.16), transparent 28%),
+        linear-gradient(135deg, #27231f, #080808);
+      display: grid;
+      place-items: end center;
+      overflow: hidden;
+      margin: -10px -10px 18px;
+    }
+    .barber-photo span { font-size: 5.8rem; filter: grayscale(1); opacity: 0.88; line-height: 1; }
+    .barber-card { text-align: center; padding: 10px; }
+    .barber-card strong { display: block; text-transform: uppercase; }
+    .barber-card p { color: var(--muted); margin: 7px 0 16px; font-size: 0.92rem; }
+    .booking-band { background: linear-gradient(180deg, #0b0b0b, #000); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+    .booking-shell {
+      display: grid;
+      grid-template-columns: 0.9fr 1.1fr;
+      gap: 28px;
+      align-items: start;
+    }
+    .booking-copy { padding: 34px 0; }
+    .booking-copy h2 { font-size: clamp(2.2rem, 5vw, 4.6rem); text-transform: uppercase; line-height: 0.95; }
+    .booking-copy p { margin-top: 18px; color: #c9c1b6; line-height: 1.8; max-width: 500px; }
+    .form-panel {
+      background: var(--panel);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 6px;
+      box-shadow: var(--shadow);
+      padding: 24px;
+    }
+    .field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 15px; }
+    .field { display: grid; gap: 7px; }
+    .field.full { grid-column: 1 / -1; }
+    label { color: #d8d0c4; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 800; }
+    input, select, textarea {
+      width: 100%;
+      border: 1px solid rgba(255,255,255,0.12);
+      background: #080808;
+      color: var(--ink);
+      border-radius: 4px;
+      padding: 13px 14px;
+      outline: none;
+    }
+    textarea { min-height: 88px; resize: vertical; }
+    input:focus, select:focus, textarea:focus { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(181,154,102,0.16); }
+    .slot-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-top: 4px; }
+    .slot {
+      min-height: 42px;
+      border: 1px solid rgba(255,255,255,0.12);
+      background: #0d0d0d;
+      border-radius: 4px;
+      color: #ddd;
+      font-weight: 800;
+    }
+    .slot[disabled] { opacity: 0.28; cursor: not-allowed; text-decoration: line-through; }
+    .slot.active { background: var(--gold); color: #111; border-color: var(--gold); }
+    .message { margin-top: 14px; min-height: 22px; color: var(--muted); line-height: 1.5; }
+    .message.ok { color: var(--ok); }
+    .message.err { color: var(--danger); }
+    .proof { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; border-top: 1px solid rgba(255,255,255,0.07); border-bottom: 1px solid rgba(255,255,255,0.07); background: #060606; }
+    .proof div { padding: 28px 22px; display: flex; gap: 14px; align-items: center; justify-content: center; border-right: 1px solid rgba(255,255,255,0.07); text-transform: uppercase; color: #d9d3ca; }
+    .proof div:last-child { border-right: 0; }
+    footer { padding: 30px 0; background: #030303; color: #867d72; text-align: center; letter-spacing: 0.12em; text-transform: uppercase; font-size: 0.72rem; }
+    .whatsapp {
+      position: fixed;
+      right: 18px;
+      bottom: 18px;
+      width: 56px;
+      height: 56px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: #16b45d;
+      color: white;
+      z-index: 40;
+      box-shadow: 0 14px 34px rgba(0,0,0,0.45);
+      font-size: 1.5rem;
+    }
+    .admin-modal[hidden], [hidden] { display: none !important; }
+    .admin-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 80;
+      background: rgba(0,0,0,0.75);
+      backdrop-filter: blur(10px);
+      padding: 24px;
+      overflow: auto;
+    }
+    .admin-dialog {
+      width: min(1180px, 100%);
+      margin: 0 auto;
+      background: #0b0b0b;
+      border: 1px solid rgba(181,154,102,0.25);
+      border-radius: 6px;
+      box-shadow: var(--shadow);
+      padding: 24px;
+    }
+    .admin-head, .admin-actions { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+    .admin-head h2 { text-transform: uppercase; margin-top: 8px; }
+    .tabs { display: flex; gap: 8px; flex-wrap: wrap; margin: 22px 0; }
+    .tab { padding: 11px 15px; border: 1px solid rgba(255,255,255,0.12); background: #121212; border-radius: 4px; color: #d6d0c7; }
+    .tab.active { background: var(--gold); color: #111; border-color: var(--gold); font-weight: 900; }
+    .admin-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+    .admin-card { border: 1px solid rgba(255,255,255,0.1); background: #101010; border-radius: 5px; padding: 16px; }
+    .admin-card h3 { text-transform: uppercase; margin-bottom: 14px; }
+    .row-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+    .mini { color: var(--muted); font-size: 0.86rem; line-height: 1.5; }
+    .list { display: grid; gap: 12px; }
+    .appointment { border: 1px solid rgba(255,255,255,0.1); border-left: 4px solid var(--gold); padding: 14px; border-radius: 4px; background: #0b0b0b; }
+    .appointment strong { display: block; margin-bottom: 6px; }
+    .schedule-table { display: grid; gap: 10px; }
+    .day-row { display: grid; grid-template-columns: 120px 1fr; gap: 10px; align-items: start; }
+    .chips { display: flex; flex-wrap: wrap; gap: 7px; }
+    .chip { border: 1px solid rgba(255,255,255,0.12); background: #080808; color: #ddd; padding: 8px 10px; border-radius: 4px; }
+    .chip.active { background: var(--gold); color: #111; border-color: var(--gold); font-weight: 800; }
+
+    @media (max-width: 980px) {
+      .menu { display: none; }
+      .hero { min-height: auto; padding-top: 48px; background-size: min(640px, 110vw) auto; background-position: center 130px; }
+      .hero-grid, .booking-shell { grid-template-columns: 1fr; }
+      .info-card { max-width: 420px; }
+      .quick, .services, .barbers, .proof, .admin-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 640px) {
+      .nav { min-height: 68px; }
+      .brand img { width: 78px; }
+      .admin-open { padding: 10px 12px; font-size: 0.72rem; }
+      .hero { padding-bottom: 18px; }
+      .quick, .services, .barbers, .proof, .field-grid, .admin-grid { grid-template-columns: 1fr; }
+      .quick-item { border-right: 0; border-bottom: 1px dashed rgba(255,255,255,0.12); }
+      .section-head { align-items: start; flex-direction: column; }
+      .slot-grid { grid-template-columns: repeat(3, 1fr); }
+      .day-row { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="container nav">
+      <a class="brand" href="#inicio" aria-label="Barbearia da Vinte"><img src="/static/img/logo-barbeiro.jpg.jpeg" alt="Logo da Barbearia da Vinte" /></a>
+      <nav class="menu">
+        <a href="#inicio">Inicio</a>
+        <a href="#servicos">Servicos</a>
+        <a href="#barbeiros">Barbeiros</a>
+        <a href="#agendamento">Agendamento</a>
+        <a href="#sobre">Sobre nos</a>
+      </nav>
+      <button class="admin-open" id="open-admin" type="button" hidden>Area admin</button>
+    </div>
+  </header>
+
+  <main id="inicio">
+    <section class="hero">
+      <div class="container">
+        <div class="hero-grid">
+          <div>
+            <span class="eyebrow" id="hero-tagline">Seu estilo. Sua identidade.</span>
+            <h1>Barbearia<br />da Vinte</h1>
+            <p class="hero-sub" id="hero-about">Mais que um corte. Uma experiencia feita para voce sair alinhado, no horario marcado e com atendimento de verdade.</p>
+            <div class="hero-actions">
+              <a class="btn" href="#agendamento">Agendar horario</a>
+              <a class="btn secondary" href="#servicos">Ver servicos</a>
+            </div>
+          </div>
+          <aside class="info-card">
+            <div class="info-line"><span class="ico">◷</span><p><strong>Atendimento</strong><span id="info-hours">Ter - Dom: 09h as 20h</span></p></div>
+            <div class="info-line"><span class="ico">⌖</span><p><strong>Endereco</strong><span id="info-address">Rua da Vinte, 20 - Centro</span></p></div>
+            <div class="info-line"><span class="ico">☏</span><p><strong>WhatsApp</strong><span id="info-phone">(11) 99999-9999</span></p></div>
+            <div class="info-line"><span class="ico">◎</span><p><strong>Instagram</strong><span id="info-instagram">@barbeariadavinte</span></p></div>
+          </aside>
+        </div>
+        <div class="quick">
+          <div class="quick-item"><span class="ico">▦</span><p><strong>Escolha o servico</strong><span>Veja valores e duracao.</span></p></div>
+          <div class="quick-item"><span class="ico">♙</span><p><strong>Escolha o barbeiro</strong><span>Marque com seu profissional.</span></p></div>
+          <div class="quick-item"><span class="ico">◴</span><p><strong>Escolha o horario</strong><span>Horarios ocupados somem.</span></p></div>
+          <div class="quick-item"><a class="btn" href="#agendamento">Agendar agora</a></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="servicos">
+      <div class="container">
+        <div class="section-head">
+          <h2>Nossos servicos</h2>
+          <p>Cortes, barba e acabamento com preco claro antes do cliente confirmar o horario.</p>
+        </div>
+        <div class="services" id="service-list"></div>
+      </div>
+    </section>
+
+    <section id="barbeiros">
+      <div class="container">
+        <div class="section-head">
+          <h2>Nossos barbeiros</h2>
+          <p>Cada barbeiro pode ter seu proprio e-mail e sua propria agenda dentro do painel admin.</p>
+        </div>
+        <div class="barbers" id="barber-list"></div>
+      </div>
+    </section>
+
+    <section class="booking-band" id="agendamento">
+      <div class="container booking-shell">
+        <div class="booking-copy">
+          <span class="eyebrow">Agendamento online</span>
+          <h2>Corte marcado, horario garantido.</h2>
+          <p>Quando o cliente confirma, o horario fica ocupado para todos os outros clientes. O barbeiro recebe o aviso no e-mail cadastrado na area admin.</p>
+        </div>
+        <form class="form-panel" id="booking-form">
+          <div class="field-grid">
+            <div class="field">
+              <label for="client-name">Nome</label>
+              <input id="client-name" name="clientName" required placeholder="Seu nome" />
+            </div>
+            <div class="field">
+              <label for="client-phone">WhatsApp</label>
+              <input id="client-phone" name="clientPhone" required placeholder="(11) 99999-9999" />
+            </div>
+            <div class="field">
+              <label for="client-email">E-mail</label>
+              <input id="client-email" name="clientEmail" type="email" placeholder="voce@email.com" />
+            </div>
+            <div class="field">
+              <label for="service-select">Servico</label>
+              <select id="service-select" name="serviceId" required></select>
+            </div>
+            <div class="field">
+              <label for="barber-select">Barbeiro</label>
+              <select id="barber-select" name="barberId" required></select>
+            </div>
+            <div class="field">
+              <label for="date-input">Data</label>
+              <input id="date-input" name="date" type="date" required />
+            </div>
+            <div class="field full">
+              <label>Horario livre</label>
+              <div class="slot-grid" id="slot-grid"></div>
+              <input id="time-input" name="time" type="hidden" required />
+            </div>
+            <div class="field full">
+              <label for="notes">Observacoes</label>
+              <textarea id="notes" name="notes" placeholder="Ex: quero manter o topo, alergia a algum produto..."></textarea>
+            </div>
+          </div>
+          <div class="hero-actions">
+            <button class="btn" type="submit">Confirmar horario</button>
+            <a class="btn ghost" id="whatsapp-link" href="#" target="_blank" rel="noreferrer">WhatsApp</a>
+          </div>
+          <div class="message" id="booking-message" aria-live="polite"></div>
+        </form>
+      </div>
+    </section>
+
+    <div class="proof" id="sobre">
+      <div><span class="ico">❄</span><span>Ambiente climatizado</span></div>
+      <div><span class="ico">✂</span><span>Profissionais especializados</span></div>
+      <div><span class="ico">▥</span><span>Produtos premium</span></div>
+      <div><span class="ico">◈</span><span>Higiene e seguranca</span></div>
+    </div>
+  </main>
+
+  <footer><span id="footer-name">Barbearia da Vinte</span> - Todos os direitos reservados.</footer>
+  <a class="whatsapp" id="floating-whatsapp" href="#" target="_blank" rel="noreferrer" aria-label="Chamar no WhatsApp">☏</a>
+
+  <section class="admin-modal" id="admin-modal" hidden role="dialog" aria-modal="true">
+    <div class="admin-dialog">
+      <div class="admin-head">
+        <div>
+          <span class="eyebrow">Painel administrativo</span>
+          <h2>Gerenciar Barbearia da Vinte</h2>
+          <p class="mini">Login inicial: admin / 1234</p>
+        </div>
+        <button class="btn secondary" id="close-admin" type="button">Fechar</button>
+      </div>
+
+      <div id="login-shell" class="admin-card" style="margin-top:22px;">
+        <h3>Entrar</h3>
+        <form id="login-form" class="field-grid">
+          <div class="field"><label for="login-user">Usuario</label><input id="login-user" name="user" required /></div>
+          <div class="field"><label for="login-pass">Senha</label><input id="login-pass" name="pass" type="password" required /></div>
+          <div class="field full"><button class="btn" type="submit">Entrar no admin</button></div>
+        </form>
+        <div class="message" id="login-message"></div>
+      </div>
+
+      <div id="dashboard-shell" hidden>
+        <div class="admin-actions" style="margin-top:22px;">
+          <div class="tabs" id="tabs">
+            <button class="tab active" data-tab="agenda" type="button">Agenda</button>
+            <button class="tab" data-tab="barbeiros" type="button">Barbeiros</button>
+            <button class="tab" data-tab="servicos" type="button">Servicos</button>
+            <button class="tab" data-tab="horarios" type="button">Horarios</button>
+            <button class="tab" data-tab="site" type="button">Site</button>
+          </div>
+          <div class="row-actions">
+            <button class="btn secondary" id="export-admin" type="button">Exportar</button>
+            <button class="btn ghost" id="logout-admin" type="button">Sair</button>
+          </div>
+        </div>
+        <div class="message" id="admin-message"></div>
+
+        <div id="tab-agenda" class="tab-panel">
+          <div class="admin-card">
+            <h3>Agendamentos</h3>
+            <div class="list" id="appointment-list"></div>
+          </div>
+        </div>
+
+        <div id="tab-barbeiros" class="tab-panel" hidden>
+          <div class="admin-actions"><h3>Barbeiros</h3><button class="btn secondary" id="add-barber" type="button">Adicionar barbeiro</button></div>
+          <div class="admin-grid" id="admin-barbers"></div>
+        </div>
+
+        <div id="tab-servicos" class="tab-panel" hidden>
+          <div class="admin-actions"><h3>Servicos</h3><button class="btn secondary" id="add-service" type="button">Adicionar servico</button></div>
+          <div class="admin-grid" id="admin-services"></div>
+        </div>
+
+        <div id="tab-horarios" class="tab-panel" hidden>
+          <div class="admin-card">
+            <h3>Horarios por barbeiro</h3>
+            <p class="mini">Clique nos horarios para ligar ou desligar. Os clientes so veem os horarios ativos e ainda livres.</p>
+            <div class="field" style="margin:16px 0;"><label for="schedule-barber">Barbeiro</label><select id="schedule-barber"></select></div>
+            <div class="schedule-table" id="schedule-table"></div>
+          </div>
+        </div>
+
+        <div id="tab-site" class="tab-panel" hidden>
+          <div class="admin-card">
+            <h3>Dados do site</h3>
+            <form id="settings-form" class="field-grid">
+              <div class="field"><label>Nome</label><input name="name" /></div>
+              <div class="field"><label>Slogan</label><input name="tagline" /></div>
+              <div class="field"><label>Telefone</label><input name="phone" /></div>
+              <div class="field"><label>WhatsApp com DDI</label><input name="whatsapp" /></div>
+              <div class="field"><label>Horario</label><input name="hours" /></div>
+              <div class="field"><label>Instagram</label><input name="instagram" /></div>
+              <div class="field full"><label>Endereco</label><input name="address" /></div>
+              <div class="field full"><label>Sobre</label><textarea name="about"></textarea></div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <script>
+    const state = {
+      settings: {},
+      services: [],
+      barbers: [],
+      slots: [],
+      appointments: [],
+      selectedTime: "",
+      adminLogged: false,
+      activeTab: "agenda",
+    };
+    const weekdays = ["Segunda", "Terca", "Quarta", "Quinta", "Sexta", "Sabado", "Domingo"];
+    const baseTimes = ["09:00","10:00","11:00","13:00","14:00","15:00","16:00","17:00","18:00","19:00","20:00"];
+
+    const $ = (id) => document.getElementById(id);
+    const money = (value) => Number(value || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+    const escapeHtml = (text) => String(text ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[char]));
+
+    async function fetchJson(url, options = {}) {
+      const response = await fetch(url, {
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+        ...options,
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "Nao foi possivel concluir.");
+      return payload;
+    }
+
+    function setMessage(el, text, type = "") {
+      el.textContent = text;
+      el.className = "message " + type;
+    }
+
+    function whatsappUrl(text) {
+      const number = (state.settings.whatsapp || "").replace(/\D/g, "");
+      return "https://wa.me/" + number + "?text=" + encodeURIComponent(text || "Ola! Vim pelo site da Barbearia da Vinte.");
+    }
+
+    function renderPublic() {
+      $("hero-tagline").textContent = state.settings.tagline || "Seu estilo. Sua identidade.";
+      $("hero-about").textContent = state.settings.about || "";
+      $("info-hours").textContent = state.settings.hours || "";
+      $("info-address").textContent = state.settings.address || "";
+      $("info-phone").textContent = state.settings.phone || "";
+      $("info-instagram").textContent = state.settings.instagram || "";
+      $("footer-name").textContent = state.settings.name || "Barbearia da Vinte";
+      $("floating-whatsapp").href = whatsappUrl();
+      $("whatsapp-link").href = whatsappUrl("Ola! Quero marcar um horario na Barbearia da Vinte.");
+
+      $("service-list").innerHTML = state.services.map((service) => `
+        <article class="service-card">
+          <strong>${escapeHtml(service.name)}</strong>
+          <p>${escapeHtml(service.description || "Servico da barbearia.")}</p>
+          <div class="price">${money(service.price)} · ${escapeHtml(service.duration)} min</div>
+        </article>
+      `).join("");
+
+      $("barber-list").innerHTML = state.barbers.map((barber, index) => `
+        <article class="barber-card">
+          <div class="barber-photo">${barber.photo ? `<img src="${escapeHtml(barber.photo)}" alt="${escapeHtml(barber.name)}" />` : `<span>${["♙","♘","♗","♔"][index % 4]}</span>`}</div>
+          <strong>${escapeHtml(barber.name)}</strong>
+          <p>${escapeHtml(barber.specialty || "Barbeiro")}</p>
+          <a class="btn secondary" href="#agendamento" data-pick-barber="${barber.id}">Agendar</a>
+        </article>
+      `).join("");
+
+      $("service-select").innerHTML = state.services.map((service) => `<option value="${service.id}">${escapeHtml(service.name)} - ${money(service.price)}</option>`).join("");
+      $("barber-select").innerHTML = state.barbers.map((barber) => `<option value="${barber.id}">${escapeHtml(barber.name)}</option>`).join("");
+      document.querySelectorAll("[data-pick-barber]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          $("barber-select").value = btn.dataset.pickBarber;
+          loadAvailability();
+        });
+      });
+      loadAvailability();
+    }
+
+    async function loadPublicData() {
+      const payload = await fetchJson("/api/public-data");
+      Object.assign(state, payload);
+      renderPublic();
+    }
+
+    async function loadAvailability() {
+      const barberId = $("barber-select").value;
+      const date = $("date-input").value;
+      state.selectedTime = "";
+      $("time-input").value = "";
+      if (!barberId || !date) {
+        $("slot-grid").innerHTML = '<p class="mini">Escolha barbeiro e data para ver horarios.</p>';
+        return;
+      }
+      const payload = await fetchJson(`/api/availability?barberId=${encodeURIComponent(barberId)}&date=${encodeURIComponent(date)}`);
+      $("slot-grid").innerHTML = payload.slots.length ? payload.slots.map((slot) => `
+        <button class="slot" type="button" ${slot.available ? "" : "disabled"} data-time="${slot.time}">${slot.time}</button>
+      `).join("") : '<p class="mini">Esse barbeiro nao tem horarios cadastrados nessa data.</p>';
+      document.querySelectorAll(".slot[data-time]").forEach((button) => {
+        button.addEventListener("click", () => {
+          document.querySelectorAll(".slot").forEach((item) => item.classList.remove("active"));
+          button.classList.add("active");
+          state.selectedTime = button.dataset.time;
+          $("time-input").value = state.selectedTime;
+        });
+      });
+    }
+
+    $("booking-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const formData = new FormData(event.currentTarget);
+      if (!$("time-input").value) {
+        setMessage($("booking-message"), "Escolha um horario livre para confirmar.", "err");
+        return;
+      }
+      setMessage($("booking-message"), "Confirmando seu horario...", "");
+      try {
+        const payload = Object.fromEntries(formData.entries());
+        payload.serviceId = Number(payload.serviceId);
+        payload.barberId = Number(payload.barberId);
+        const response = await fetchJson("/api/appointments", { method: "POST", body: JSON.stringify(payload) });
+        event.currentTarget.reset();
+        setDefaultDate();
+        await loadAvailability();
+        setMessage($("booking-message"), `Horario confirmado com ${response.appointment.barber_name} em ${response.appointment.date} as ${response.appointment.time}.`, "ok");
+      } catch (error) {
+        setMessage($("booking-message"), error.message, "err");
+        await loadAvailability();
+      }
+    });
+
+    function setDefaultDate() {
+      const date = new Date();
+      date.setDate(date.getDate() + 1);
+      $("date-input").min = new Date().toISOString().slice(0, 10);
+      $("date-input").value = date.toISOString().slice(0, 10);
+    }
+
+    async function openAdmin() {
+      $("admin-modal").hidden = false;
+      await checkSession();
+      if (state.adminLogged) await refreshAdmin();
+    }
+
+    function updateAdminView() {
+      $("login-shell").hidden = state.adminLogged;
+      $("dashboard-shell").hidden = !state.adminLogged;
+      document.querySelectorAll(".tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.tab === state.activeTab));
+      document.querySelectorAll(".tab-panel").forEach((panel) => panel.hidden = panel.id !== "tab-" + state.activeTab);
+    }
+
+    async function checkSession() {
+      try {
+        const payload = await fetchJson("/api/admin/session");
+        state.adminLogged = Boolean(payload.logged);
+      } catch {
+        state.adminLogged = false;
+      }
+      updateAdminView();
+    }
+
+    async function refreshAdmin() {
+      const payload = await fetchJson("/api/admin/data");
+      Object.assign(state, payload);
+      renderPublic();
+      renderAdmin();
+    }
+
+    async function saveAdmin() {
+      setMessage($("admin-message"), "Salvando...", "");
+      const payload = {
+        settings: state.settings,
+        services: state.services,
+        barbers: state.barbers,
+        slots: state.slots,
+      };
+      const saved = await fetchJson("/api/admin/save", { method: "POST", body: JSON.stringify(payload) });
+      Object.assign(state, saved);
+      renderPublic();
+      renderAdmin();
+      setMessage($("admin-message"), "Alteracoes salvas.", "ok");
+    }
+
+    function renderAdmin() {
+      renderAppointments();
+      renderAdminBarbers();
+      renderAdminServices();
+      renderSettings();
+      renderSchedule();
+      updateAdminView();
+    }
+
+    function renderAppointments() {
+      $("appointment-list").innerHTML = state.appointments.length ? state.appointments.map((item) => `
+        <div class="appointment">
+          <strong>${escapeHtml(item.date)} as ${escapeHtml(item.time)} · ${escapeHtml(item.client_name)}</strong>
+          <p class="mini">${escapeHtml(item.service_name)} com ${escapeHtml(item.barber_name)} · ${money(item.service_price)}</p>
+          <p class="mini">WhatsApp: ${escapeHtml(item.client_phone)} · E-mail: ${escapeHtml(item.client_email || "nao informado")}</p>
+          <p class="mini">Status: ${escapeHtml(item.status)} · Criado em ${escapeHtml(item.created_at)}</p>
+          ${item.notes ? `<p class="mini">Obs: ${escapeHtml(item.notes)}</p>` : ""}
+          <div class="row-actions">
+            <button class="btn ghost" data-status="done" data-id="${item.id}" type="button">Concluido</button>
+            <button class="btn secondary" data-status="canceled" data-id="${item.id}" type="button">Cancelar</button>
+          </div>
+        </div>
+      `).join("") : '<p class="mini">Nenhum agendamento ainda.</p>';
+      document.querySelectorAll("[data-status]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          await fetchJson("/api/admin/appointment-status", { method: "POST", body: JSON.stringify({ id: Number(button.dataset.id), status: button.dataset.status }) });
+          await refreshAdmin();
+        });
+      });
+    }
+
+    function renderAdminBarbers() {
+      $("admin-barbers").innerHTML = state.barbers.map((barber, index) => `
+        <div class="admin-card">
+          <h3>Barbeiro ${index + 1}</h3>
+          <div class="field-grid">
+            <div class="field"><label>Nome</label><input data-barber="${index}" data-field="name" value="${escapeHtml(barber.name)}" /></div>
+            <div class="field"><label>Especialidade</label><input data-barber="${index}" data-field="specialty" value="${escapeHtml(barber.specialty)}" /></div>
+            <div class="field full"><label>E-mail para receber agendamento</label><input data-barber="${index}" data-field="email" value="${escapeHtml(barber.email)}" /></div>
+            <div class="field full"><label>URL da foto</label><input data-barber="${index}" data-field="photo" value="${escapeHtml(barber.photo)}" /></div>
+          </div>
+          <div class="row-actions"><button class="btn secondary" data-remove-barber="${index}" type="button">Remover</button></div>
+        </div>
+      `).join("");
+      bindAdminInputs();
+    }
+
+    function renderAdminServices() {
+      $("admin-services").innerHTML = state.services.map((service, index) => `
+        <div class="admin-card">
+          <h3>Servico ${index + 1}</h3>
+          <div class="field-grid">
+            <div class="field"><label>Nome</label><input data-service="${index}" data-field="name" value="${escapeHtml(service.name)}" /></div>
+            <div class="field"><label>Valor</label><input data-service="${index}" data-field="price" type="number" min="0" step="0.01" value="${escapeHtml(service.price)}" /></div>
+            <div class="field"><label>Duracao min.</label><input data-service="${index}" data-field="duration" type="number" min="5" value="${escapeHtml(service.duration)}" /></div>
+            <div class="field full"><label>Descricao</label><textarea data-service="${index}" data-field="description">${escapeHtml(service.description)}</textarea></div>
+          </div>
+          <div class="row-actions"><button class="btn secondary" data-remove-service="${index}" type="button">Remover</button></div>
+        </div>
+      `).join("");
+      bindAdminInputs();
+    }
+
+    function renderSettings() {
+      const form = $("settings-form");
+      Object.keys(state.settings).forEach((key) => {
+        if (form.elements[key]) form.elements[key].value = state.settings[key] || "";
+      });
+    }
+
+    function renderSchedule() {
+      const previousBarber = $("schedule-barber").value;
+      $("schedule-barber").innerHTML = state.barbers.map((barber) => `<option value="${barber.id}">${escapeHtml(barber.name)}</option>`).join("");
+      if (previousBarber && state.barbers.some((barber) => String(barber.id) === previousBarber)) {
+        $("schedule-barber").value = previousBarber;
+      }
+      const barberId = Number($("schedule-barber").value || state.barbers[0]?.id || 0);
+      $("schedule-table").innerHTML = weekdays.map((day, dayIndex) => `
+        <div class="day-row">
+          <strong>${day}</strong>
+          <div class="chips">${baseTimes.map((time) => {
+            const active = state.slots.some((slot) => Number(slot.barber_id) === barberId && Number(slot.weekday) === dayIndex && slot.time === time);
+            return `<button class="chip ${active ? "active" : ""}" data-day="${dayIndex}" data-schedule-time="${time}" type="button">${time}</button>`;
+          }).join("")}</div>
+        </div>
+      `).join("");
+      document.querySelectorAll("[data-schedule-time]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const weekday = Number(button.dataset.day);
+          const time = button.dataset.scheduleTime;
+          const existing = state.slots.findIndex((slot) => Number(slot.barber_id) === barberId && Number(slot.weekday) === weekday && slot.time === time);
+          if (existing >= 0) state.slots.splice(existing, 1);
+          else state.slots.push({ barber_id: barberId, weekday, time });
+          await saveAdmin();
+        });
+      });
+    }
+
+    function bindAdminInputs() {
+      document.querySelectorAll("[data-barber]").forEach((input) => {
+        input.addEventListener("change", async () => {
+          state.barbers[Number(input.dataset.barber)][input.dataset.field] = input.value;
+          await saveAdmin();
+        });
+      });
+      document.querySelectorAll("[data-service]").forEach((input) => {
+        input.addEventListener("change", async () => {
+          const service = state.services[Number(input.dataset.service)];
+          service[input.dataset.field] = input.type === "number" ? Number(input.value) : input.value;
+          await saveAdmin();
+        });
+      });
+      document.querySelectorAll("[data-remove-barber]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          state.barbers.splice(Number(button.dataset.removeBarber), 1);
+          await saveAdmin();
+        });
+      });
+      document.querySelectorAll("[data-remove-service]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          state.services.splice(Number(button.dataset.removeService), 1);
+          await saveAdmin();
+        });
+      });
+    }
+
+    $("settings-form").addEventListener("change", async (event) => {
+      if (event.target.name) {
+        state.settings[event.target.name] = event.target.value;
+        await saveAdmin();
+      }
+    });
+    $("add-barber").addEventListener("click", async () => {
+      state.barbers.push({ name: "Novo barbeiro", specialty: "Especialidade", email: "", photo: "", active: 1 });
+      await saveAdmin();
+    });
+    $("add-service").addEventListener("click", async () => {
+      state.services.push({ name: "Novo servico", description: "", price: 0, duration: 30, active: 1 });
+      await saveAdmin();
+    });
+    $("schedule-barber").addEventListener("change", renderSchedule);
+    $("tabs").addEventListener("click", (event) => {
+      if (event.target.dataset.tab) {
+        state.activeTab = event.target.dataset.tab;
+        updateAdminView();
+      }
+    });
+    $("login-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      setMessage($("login-message"), "Entrando...", "");
+      try {
+        await fetchJson("/api/admin/login", { method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(event.currentTarget).entries())) });
+        state.adminLogged = true;
+        event.currentTarget.reset();
+        setMessage($("login-message"), "", "");
+        updateAdminView();
+        try {
+          await refreshAdmin();
+        } catch (error) {
+          setMessage($("admin-message"), "Login feito, mas nao consegui carregar o painel: " + error.message, "err");
+        }
+      } catch (error) {
+        setMessage($("login-message"), error.message, "err");
+      }
+    });
+    $("logout-admin").addEventListener("click", async () => {
+      await fetchJson("/api/admin/logout", { method: "POST", body: "{}" });
+      state.adminLogged = false;
+      updateAdminView();
+    });
+    $("export-admin").addEventListener("click", () => window.open("/api/admin/export", "_blank", "noopener,noreferrer"));
+    $("open-admin").addEventListener("click", openAdmin);
+    $("close-admin").addEventListener("click", () => $("admin-modal").hidden = true);
+    $("admin-modal").addEventListener("click", (event) => {
+      if (event.target === $("admin-modal")) $("admin-modal").hidden = true;
+    });
+    $("barber-select").addEventListener("change", loadAvailability);
+    $("date-input").addEventListener("change", loadAvailability);
+
+    setDefaultDate();
+    loadPublicData().catch((error) => setMessage($("booking-message"), error.message, "err"));
+    if (location.pathname === "/admin") openAdmin();
+  </script>
+</body>
+</html>
