@@ -157,6 +157,17 @@ def init_db():
         )
         conn.execute(
             """
+            CREATE TABLE IF NOT EXISTS appointment_services (
+                appointment_id INTEGER NOT NULL,
+                service_id INTEGER NOT NULL,
+                PRIMARY KEY (appointment_id, service_id),
+                FOREIGN KEY (appointment_id) REFERENCES appointments(id) ON DELETE CASCADE,
+                FOREIGN KEY (service_id) REFERENCES services(id)
+            )
+            """
+        )
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS customers (
                 id INTEGER PRIMARY KEY,
                 name TEXT NOT NULL,
@@ -317,7 +328,24 @@ def read_appointments(conn):
         """
         SELECT a.id, a.client_name, a.client_phone, a.client_email, a.notes, a.date, a.time,
                a.status, a.created_at, a.customer_id, a.plan_booking,
-               s.name AS service_name, s.price AS service_price,
+               COALESCE((
+                   SELECT GROUP_CONCAT(s2.name, ' + ')
+                   FROM appointment_services aps
+                   JOIN services s2 ON s2.id = aps.service_id
+                   WHERE aps.appointment_id = a.id
+               ), s.name) AS service_name,
+               COALESCE((
+                   SELECT SUM(s2.price)
+                   FROM appointment_services aps
+                   JOIN services s2 ON s2.id = aps.service_id
+                   WHERE aps.appointment_id = a.id
+               ), s.price) AS service_price,
+               COALESCE((
+                   SELECT SUM(s2.duration)
+                   FROM appointment_services aps
+                   JOIN services s2 ON s2.id = aps.service_id
+                   WHERE aps.appointment_id = a.id
+               ), s.duration) AS service_duration,
                b.name AS barber_name, b.email AS barber_email
         FROM appointments a
         JOIN services s ON s.id = a.service_id
@@ -388,7 +416,29 @@ def sanitize_customer(row):
     return customer
 
 
-def get_availability(barber_id, date_text):
+def time_to_minutes(time_text):
+    hour, minute = [int(part) for part in time_text.split(":")]
+    return hour * 60 + minute
+
+
+def ranges_overlap(start_a, end_a, start_b, end_b):
+    return start_a < end_b and start_b < end_a
+
+
+def get_selected_service_rows(conn, service_ids):
+    clean_ids = [int(service_id) for service_id in service_ids if int(service_id or 0) > 0]
+    if not clean_ids:
+        return []
+    placeholders = ",".join("?" for _ in clean_ids)
+    rows = conn.execute(
+        f"SELECT id, name, price, duration FROM services WHERE id IN ({placeholders}) AND active = 1",
+        clean_ids,
+    ).fetchall()
+    by_id = {row["id"]: row for row in rows}
+    return [by_id[service_id] for service_id in clean_ids if service_id in by_id]
+
+
+def get_availability(barber_id, date_text, service_ids=None):
     try:
         appointment_date = datetime.strptime(date_text, "%Y-%m-%d").date()
     except ValueError:
@@ -397,6 +447,8 @@ def get_availability(barber_id, date_text):
     today = datetime.now().date()
     now_time = datetime.now().strftime("%H:%M")
     with db_connection() as conn:
+        selected_services = get_selected_service_rows(conn, service_ids or [])
+        required_duration = sum(int(row["duration"]) for row in selected_services) or 30
         slots = [
             row["time"]
             for row in conn.execute(
@@ -408,18 +460,38 @@ def get_availability(barber_id, date_text):
                 (barber_id, weekday),
             ).fetchall()
         ]
-        busy = {
-            row["time"]
-            for row in conn.execute(
-                """
-                SELECT time FROM appointments
-                WHERE barber_id = ? AND date = ? AND status = 'confirmed'
-                """,
-                (barber_id, date_text),
-            ).fetchall()
-        }
+        busy_rows = conn.execute(
+            """
+            SELECT a.time,
+                   COALESCE((
+                       SELECT SUM(s2.duration)
+                       FROM appointment_services aps
+                       JOIN services s2 ON s2.id = aps.service_id
+                       WHERE aps.appointment_id = a.id
+                   ), s.duration) AS busy_duration
+            FROM appointments a
+            JOIN services s ON s.id = a.service_id
+            WHERE barber_id = ? AND date = ? AND status = 'confirmed'
+            """,
+            (barber_id, date_text),
+        ).fetchall()
+        busy_ranges = [
+            (time_to_minutes(row["time"]), time_to_minutes(row["time"]) + int(row["busy_duration"]))
+            for row in busy_rows
+        ]
+        closing_minutes = time_to_minutes(slots[-1]) + 60 if slots else 0
     return [
-        {"time": time, "available": time not in busy and (appointment_date > today or time > now_time)}
+        {
+            "time": time,
+            "available": (
+                (appointment_date > today or time > now_time)
+                and (time_to_minutes(time) + required_duration) <= closing_minutes
+                and not any(
+                    ranges_overlap(time_to_minutes(time), time_to_minutes(time) + required_duration, start, end)
+                    for start, end in busy_ranges
+                )
+            ),
+        }
         for time in slots
     ]
 
@@ -677,27 +749,35 @@ def create_appointment(payload, customer=None):
     notes = str(payload.get("notes", "")).strip()
     date_text = str(payload.get("date", "")).strip()
     time = str(payload.get("time", "")).strip()
-    service_id = int(payload.get("serviceId") or 0)
+    service_ids = payload.get("serviceIds")
+    if not isinstance(service_ids, list):
+        service_ids = [payload.get("serviceId")]
+    service_ids = [int(service_id or 0) for service_id in service_ids if int(service_id or 0) > 0]
+    service_id = service_ids[0] if service_ids else 0
     barber_id = int(payload.get("barberId") or 0)
     plan_booking = bool(payload.get("planBooking"))
 
     if not all([name, phone, date_text, time, service_id, barber_id]):
         raise ValueError("Preencha nome, WhatsApp, servico, barbeiro, data e horario.")
 
-    available = get_availability(barber_id, date_text)
+    available = get_availability(barber_id, date_text, service_ids)
     if not any(slot["time"] == time and slot["available"] for slot in available):
         raise ValueError("Esse horario acabou de ficar indisponivel. Escolha outro horario.")
 
     created_at = datetime.now().strftime("%d/%m/%Y, %H:%M")
     with db_connection() as conn:
         customer_id = int(customer["id"]) if customer else None
-        service = conn.execute("SELECT id, name, price FROM services WHERE id = ?", (service_id,)).fetchone()
-        if not service:
-            raise ValueError("Servico invalido.")
+        services = get_selected_service_rows(conn, service_ids)
+        if not services:
+            raise ValueError("Escolha pelo menos um servico valido.")
+        service = services[0]
+        total_price = sum(float(row["price"]) for row in services)
+        total_duration = sum(int(row["duration"]) for row in services)
+        service_names = " + ".join(row["name"] for row in services)
         if plan_booking:
             if not customer_id:
                 raise ValueError("Entre na sua conta para usar corte do plano.")
-            if "corte" not in service["name"].lower():
+            if any("corte" not in row["name"].lower() for row in services):
                 raise ValueError("O plano mensal so pode ser usado em servicos de corte.")
             active_plan = get_active_plan_for_customer(conn, customer_id, date_text)
             if not active_plan:
@@ -712,22 +792,27 @@ def create_appointment(payload, customer=None):
                 (name, phone, email, customer_id, notes, service_id, barber_id, date_text, time, 1 if plan_booking else 0, created_at),
             )
             appointment_id = cursor.lastrowid
+            conn.executemany(
+                "INSERT OR IGNORE INTO appointment_services (appointment_id, service_id) VALUES (?, ?)",
+                [(appointment_id, row["id"]) for row in services],
+            )
         except sqlite3.IntegrityError as exc:
             raise ValueError("Esse horario ja foi ocupado por outro cliente.") from exc
 
         appointment = conn.execute(
             """
             SELECT a.id, a.client_name, a.client_phone, a.client_email, a.notes, a.date, a.time, a.created_at, a.customer_id, a.plan_booking,
-                   s.name AS service_name, s.price AS service_price, s.duration AS service_duration,
                    b.name AS barber_name, b.email AS barber_email
             FROM appointments a
-            JOIN services s ON s.id = a.service_id
             JOIN barbers b ON b.id = a.barber_id
             WHERE a.id = ?
             """,
             (appointment_id,),
         ).fetchone()
         appointment_dict = dict(appointment)
+        appointment_dict["service_name"] = service_names
+        appointment_dict["service_price"] = total_price
+        appointment_dict["service_duration"] = total_duration
         notify_barber(conn, appointment_dict)
         return appointment_dict
 
@@ -830,7 +915,10 @@ class AppHandler(BaseHTTPRequestHandler):
             query = parse_qs(parsed.query)
             barber_id = int(query.get("barberId", ["0"])[0] or 0)
             date_text = query.get("date", [""])[0]
-            return self.send_json(HTTPStatus.OK, {"slots": get_availability(barber_id, date_text)})
+            service_ids = []
+            for raw_value in query.get("serviceIds", []) + query.get("serviceId", []):
+                service_ids.extend([item for item in raw_value.split(",") if item])
+            return self.send_json(HTTPStatus.OK, {"slots": get_availability(barber_id, date_text, service_ids)})
         if parsed.path == "/api/client/session":
             customer = enrich_customer_with_plan(self.get_current_customer())
             return self.send_json(HTTPStatus.OK, {"logged": bool(customer), "customer": customer})
