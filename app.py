@@ -20,7 +20,9 @@ STATIC_DIR = BASE_DIR / "static"
 HOST = os.environ.get("HOST", "127.0.0.1")
 PORT = int(os.environ.get("PORT", "8000"))
 SESSION_COOKIE = "barbearia_vinte_session"
+CLIENT_SESSION_COOKIE = "barbearia_vinte_client_session"
 SESSION_DURATION = timedelta(hours=12)
+CLIENT_SESSION_DURATION = timedelta(days=30)
 ADMIN_USER = os.environ.get("ADMIN_USER", "admin")
 ADMIN_PASS_HASH = hashlib.sha256(os.environ.get("ADMIN_PASS", "1234").encode("utf-8")).hexdigest()
 
@@ -53,6 +55,10 @@ DEFAULT_BARBERS = [
 DEFAULT_TIMES = ["09:00", "10:00", "11:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00"]
 
 
+def password_hash(value):
+    return hashlib.sha256(str(value).encode("utf-8")).hexdigest()
+
+
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -63,6 +69,12 @@ def db_connection():
     conn.execute("PRAGMA journal_mode = OFF")
     conn.execute("PRAGMA synchronous = OFF")
     return conn
+
+
+def ensure_column(conn, table_name, column_name, column_sql):
+    columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table_name})").fetchall()}
+    if column_name not in columns:
+        conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_sql}")
 
 
 def init_db():
@@ -120,15 +132,56 @@ def init_db():
                 client_name TEXT NOT NULL,
                 client_phone TEXT NOT NULL,
                 client_email TEXT NOT NULL DEFAULT '',
+                customer_id INTEGER,
                 notes TEXT NOT NULL DEFAULT '',
                 service_id INTEGER NOT NULL,
                 barber_id INTEGER NOT NULL,
                 date TEXT NOT NULL,
                 time TEXT NOT NULL,
+                plan_booking INTEGER NOT NULL DEFAULT 0,
                 status TEXT NOT NULL DEFAULT 'confirmed',
                 created_at TEXT NOT NULL,
+                FOREIGN KEY (customer_id) REFERENCES customers(id),
                 FOREIGN KEY (service_id) REFERENCES services(id),
                 FOREIGN KEY (barber_id) REFERENCES barbers(id)
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS customers (
+                id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL,
+                email TEXT NOT NULL UNIQUE,
+                phone TEXT NOT NULL,
+                password_hash TEXT NOT NULL,
+                cpf TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS customer_sessions (
+                token TEXT PRIMARY KEY,
+                customer_id INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS monthly_plans (
+                id INTEGER PRIMARY KEY,
+                customer_id INTEGER NOT NULL,
+                start_date TEXT NOT NULL,
+                end_date TEXT NOT NULL,
+                note TEXT NOT NULL DEFAULT '',
+                active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
             )
             """
         )
@@ -139,6 +192,8 @@ def init_db():
             WHERE status = 'confirmed'
             """
         )
+        ensure_column(conn, "appointments", "customer_id", "INTEGER")
+        ensure_column(conn, "appointments", "plan_booking", "INTEGER NOT NULL DEFAULT 0")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS email_outbox (
@@ -238,6 +293,8 @@ def read_public_data(include_admin=False):
                 for row in conn.execute("SELECT barber_id, weekday, time FROM barber_slots ORDER BY barber_id, weekday, time").fetchall()
             ]
             payload["appointments"] = read_appointments(conn)
+            payload["customers"] = read_customers(conn)
+            payload["plans"] = read_plans(conn)
             payload["emailOutbox"] = [
                 dict(row)
                 for row in conn.execute(
@@ -251,7 +308,8 @@ def read_appointments(conn):
     rows = conn.execute(
         """
         SELECT a.id, a.client_name, a.client_phone, a.client_email, a.notes, a.date, a.time,
-               a.status, a.created_at, s.name AS service_name, s.price AS service_price,
+               a.status, a.created_at, a.customer_id, a.plan_booking,
+               s.name AS service_name, s.price AS service_price,
                b.name AS barber_name, b.email AS barber_email
         FROM appointments a
         JOIN services s ON s.id = a.service_id
@@ -260,6 +318,66 @@ def read_appointments(conn):
         """
     ).fetchall()
     return [dict(row) for row in rows]
+
+
+def read_plans(conn):
+    rows = conn.execute(
+        """
+        SELECT p.id, p.customer_id, p.start_date, p.end_date, p.note, p.active, p.created_at,
+               c.name AS customer_name, c.phone AS customer_phone, c.email AS customer_email
+        FROM monthly_plans p
+        JOIN customers c ON c.id = p.customer_id
+        ORDER BY p.active DESC, p.end_date DESC, p.id DESC
+        """
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def read_customers(conn):
+    customers = []
+    rows = conn.execute(
+        "SELECT id, name, email, phone, cpf, created_at FROM customers ORDER BY name COLLATE NOCASE"
+    ).fetchall()
+    today = datetime.now().date()
+    for row in rows:
+        customer = dict(row)
+        last_haircut = conn.execute(
+            """
+            SELECT date
+            FROM appointments a
+            JOIN services s ON s.id = a.service_id
+            WHERE a.customer_id = ? AND a.status IN ('confirmed','done') AND lower(s.name) LIKE '%corte%'
+            ORDER BY date DESC, time DESC
+            LIMIT 1
+            """,
+            (customer["id"],),
+        ).fetchone()
+        next_active_plan = conn.execute(
+            """
+            SELECT id, start_date, end_date, note, active
+            FROM monthly_plans
+            WHERE customer_id = ? AND active = 1
+            ORDER BY end_date DESC, id DESC
+            LIMIT 1
+            """,
+            (customer["id"],),
+        ).fetchone()
+        customer["last_haircut_date"] = last_haircut["date"] if last_haircut else ""
+        if customer["last_haircut_date"]:
+            customer["days_since_last_haircut"] = (today - datetime.strptime(customer["last_haircut_date"], "%Y-%m-%d").date()).days
+        else:
+            customer["days_since_last_haircut"] = None
+        customer["active_plan"] = dict(next_active_plan) if next_active_plan else None
+        customers.append(customer)
+    return customers
+
+
+def sanitize_customer(row):
+    if not row:
+        return None
+    customer = dict(row)
+    customer.pop("password_hash", None)
+    return customer
 
 
 def get_availability(barber_id, date_text):
@@ -296,6 +414,146 @@ def get_availability(barber_id, date_text):
         {"time": time, "available": time not in busy and (appointment_date > today or time > now_time)}
         for time in slots
     ]
+
+
+def create_customer(payload):
+    name = str(payload.get("name", "")).strip()
+    email = str(payload.get("email", "")).strip().lower()
+    phone = str(payload.get("phone", "")).strip()
+    password = str(payload.get("password", "")).strip()
+    cpf = "".join(ch for ch in str(payload.get("cpf", "")).strip() if ch.isdigit())
+    if not all([name, email, phone, password, cpf]):
+        raise ValueError("Preencha nome, email, telefone, senha e CPF.")
+    if len(cpf) != 11:
+        raise ValueError("CPF invalido.")
+    with db_connection() as conn:
+        exists = conn.execute("SELECT id FROM customers WHERE email = ? OR cpf = ?", (email, cpf)).fetchone()
+        if exists:
+            raise ValueError("Ja existe cliente cadastrado com esse email ou CPF.")
+        cursor = conn.execute(
+            """
+            INSERT INTO customers (name, email, phone, password_hash, cpf, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (name, email, phone, password_hash(password), cpf, datetime.now().strftime("%d/%m/%Y, %H:%M")),
+        )
+        return {
+            "id": cursor.lastrowid,
+            "name": name,
+            "email": email,
+            "phone": phone,
+            "cpf": cpf,
+            "created_at": datetime.now().strftime("%d/%m/%Y, %H:%M"),
+        }
+
+
+def get_customer_by_id(customer_id):
+    with db_connection() as conn:
+        row = conn.execute(
+            "SELECT id, name, email, phone, cpf, password_hash, created_at FROM customers WHERE id = ?",
+            (customer_id,),
+        ).fetchone()
+        return sanitize_customer(row)
+
+
+def authenticate_customer(email, password):
+    with db_connection() as conn:
+        row = conn.execute(
+            "SELECT id, name, email, phone, cpf, password_hash, created_at FROM customers WHERE email = ?",
+            (str(email).strip().lower(),),
+        ).fetchone()
+        if not row or row["password_hash"] != password_hash(password):
+            return None
+        return sanitize_customer(row)
+
+
+def create_customer_session(customer_id):
+    token = secrets.token_urlsafe(32)
+    now = utc_now()
+    expires_at = now + CLIENT_SESSION_DURATION
+    with db_connection() as conn:
+        conn.execute(
+            "INSERT INTO customer_sessions (token, customer_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
+            (token, customer_id, now.isoformat(), expires_at.isoformat()),
+        )
+    return token, expires_at
+
+
+def cleanup_customer_sessions(conn):
+    conn.execute("DELETE FROM customer_sessions WHERE expires_at <= ?", (utc_now().isoformat(),))
+
+
+def get_customer_by_session(token):
+    if not token:
+        return None
+    with db_connection() as conn:
+        cleanup_customer_sessions(conn)
+        row = conn.execute(
+            """
+            SELECT c.id, c.name, c.email, c.phone, c.cpf, c.password_hash, c.created_at
+            FROM customer_sessions s
+            JOIN customers c ON c.id = s.customer_id
+            WHERE s.token = ?
+            """,
+            (token,),
+        ).fetchone()
+        return sanitize_customer(row)
+
+
+def enrich_customer_with_plan(customer):
+    if not customer:
+        return None
+    with db_connection() as conn:
+        plan = conn.execute(
+            """
+            SELECT id, start_date, end_date, note, active
+            FROM monthly_plans
+            WHERE customer_id = ? AND active = 1
+            ORDER BY end_date DESC, id DESC
+            LIMIT 1
+            """,
+            (customer["id"],),
+        ).fetchone()
+    customer = dict(customer)
+    customer["active_plan"] = dict(plan) if plan else None
+    return customer
+
+
+def delete_customer_session(token):
+    if token:
+        with db_connection() as conn:
+            conn.execute("DELETE FROM customer_sessions WHERE token = ?", (token,))
+
+
+def get_active_plan_for_customer(conn, customer_id, target_date):
+    return conn.execute(
+        """
+        SELECT id, customer_id, start_date, end_date, note, active, created_at
+        FROM monthly_plans
+        WHERE customer_id = ? AND active = 1 AND start_date <= ? AND end_date >= ?
+        ORDER BY end_date DESC, id DESC
+        LIMIT 1
+        """,
+        (customer_id, target_date, target_date),
+    ).fetchone()
+
+
+def save_monthly_plan(payload):
+    customer_id = int(payload.get("customerId") or 0)
+    start_date = str(payload.get("startDate", "")).strip()
+    end_date = str(payload.get("endDate", "")).strip()
+    note = str(payload.get("note", "")).strip()
+    if not customer_id or not start_date or not end_date:
+        raise ValueError("Escolha o cliente e as datas do plano.")
+    with db_connection() as conn:
+        conn.execute("UPDATE monthly_plans SET active = 0 WHERE customer_id = ? AND active = 1", (customer_id,))
+        conn.execute(
+            """
+            INSERT INTO monthly_plans (customer_id, start_date, end_date, note, active, created_at)
+            VALUES (?, ?, ?, ?, 1, ?)
+            """,
+            (customer_id, start_date, end_date, note, datetime.now().strftime("%d/%m/%Y, %H:%M")),
+        )
 
 
 def normalize_money(value):
@@ -394,15 +652,16 @@ def save_admin_data(payload):
                 )
 
 
-def create_appointment(payload):
-    name = str(payload.get("clientName", "")).strip()
-    phone = str(payload.get("clientPhone", "")).strip()
-    email = str(payload.get("clientEmail", "")).strip()
+def create_appointment(payload, customer=None):
+    name = customer["name"] if customer else str(payload.get("clientName", "")).strip()
+    phone = customer["phone"] if customer else str(payload.get("clientPhone", "")).strip()
+    email = customer["email"] if customer else str(payload.get("clientEmail", "")).strip()
     notes = str(payload.get("notes", "")).strip()
     date_text = str(payload.get("date", "")).strip()
     time = str(payload.get("time", "")).strip()
     service_id = int(payload.get("serviceId") or 0)
     barber_id = int(payload.get("barberId") or 0)
+    plan_booking = bool(payload.get("planBooking"))
 
     if not all([name, phone, date_text, time, service_id, barber_id]):
         raise ValueError("Preencha nome, WhatsApp, servico, barbeiro, data e horario.")
@@ -413,14 +672,26 @@ def create_appointment(payload):
 
     created_at = datetime.now().strftime("%d/%m/%Y, %H:%M")
     with db_connection() as conn:
+        customer_id = int(customer["id"]) if customer else None
+        service = conn.execute("SELECT id, name, price FROM services WHERE id = ?", (service_id,)).fetchone()
+        if not service:
+            raise ValueError("Servico invalido.")
+        if plan_booking:
+            if not customer_id:
+                raise ValueError("Entre na sua conta para usar corte do plano.")
+            if "corte" not in service["name"].lower():
+                raise ValueError("O plano mensal so pode ser usado em servicos de corte.")
+            active_plan = get_active_plan_for_customer(conn, customer_id, date_text)
+            if not active_plan:
+                raise ValueError("Seu plano mensal nao esta ativo para essa data.")
         try:
             cursor = conn.execute(
                 """
                 INSERT INTO appointments
-                (client_name, client_phone, client_email, notes, service_id, barber_id, date, time, status, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', ?)
+                (client_name, client_phone, client_email, customer_id, notes, service_id, barber_id, date, time, plan_booking, status, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', ?)
                 """,
-                (name, phone, email, notes, service_id, barber_id, date_text, time, created_at),
+                (name, phone, email, customer_id, notes, service_id, barber_id, date_text, time, 1 if plan_booking else 0, created_at),
             )
             appointment_id = cursor.lastrowid
         except sqlite3.IntegrityError as exc:
@@ -428,7 +699,7 @@ def create_appointment(payload):
 
         appointment = conn.execute(
             """
-            SELECT a.id, a.client_name, a.client_phone, a.client_email, a.notes, a.date, a.time, a.created_at,
+            SELECT a.id, a.client_name, a.client_phone, a.client_email, a.notes, a.date, a.time, a.created_at, a.customer_id, a.plan_booking,
                    s.name AS service_name, s.price AS service_price, s.duration AS service_duration,
                    b.name AS barber_name, b.email AS barber_email
             FROM appointments a
@@ -542,6 +813,9 @@ class AppHandler(BaseHTTPRequestHandler):
             barber_id = int(query.get("barberId", ["0"])[0] or 0)
             date_text = query.get("date", [""])[0]
             return self.send_json(HTTPStatus.OK, {"slots": get_availability(barber_id, date_text)})
+        if parsed.path == "/api/client/session":
+            customer = enrich_customer_with_plan(self.get_current_customer())
+            return self.send_json(HTTPStatus.OK, {"logged": bool(customer), "customer": customer})
         if parsed.path == "/api/admin/session":
             return self.send_json(HTTPStatus.OK, {"logged": self.is_authenticated()})
         if parsed.path == "/api/admin/data":
@@ -558,6 +832,12 @@ class AppHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         if parsed.path == "/api/appointments":
             return self.handle_create_appointment()
+        if parsed.path == "/api/client/register":
+            return self.handle_client_register()
+        if parsed.path == "/api/client/login":
+            return self.handle_client_login()
+        if parsed.path == "/api/client/logout":
+            return self.handle_client_logout()
         if parsed.path == "/api/admin/login":
             return self.handle_login()
         if parsed.path == "/api/admin/logout":
@@ -570,6 +850,10 @@ class AppHandler(BaseHTTPRequestHandler):
             if not self.require_auth():
                 return
             return self.handle_appointment_status()
+        if parsed.path == "/api/admin/plan":
+            if not self.require_auth():
+                return
+            return self.handle_save_plan()
         return self.send_error_json(HTTPStatus.NOT_FOUND, "Rota nao encontrada.")
 
     def serve_file(self, path, content_type):
@@ -599,10 +883,55 @@ class AppHandler(BaseHTTPRequestHandler):
         if payload is None:
             return
         try:
-            appointment = create_appointment(payload)
+            appointment = create_appointment(payload, customer=self.get_current_customer())
         except ValueError as exc:
             return self.send_error_json(HTTPStatus.BAD_REQUEST, str(exc))
         return self.send_json(HTTPStatus.CREATED, {"appointment": appointment})
+
+    def handle_client_register(self):
+        payload = self.read_json_body()
+        if payload is None:
+            return
+        try:
+            customer = create_customer(payload)
+            token, expires_at = create_customer_session(customer["id"])
+        except ValueError as exc:
+            return self.send_error_json(HTTPStatus.BAD_REQUEST, str(exc))
+        customer = enrich_customer_with_plan(customer)
+        body = json.dumps({"logged": True, "customer": customer}, ensure_ascii=False).encode("utf-8")
+        self.send_response(HTTPStatus.CREATED)
+        self.send_client_cookie(token, expires_at)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def handle_client_login(self):
+        payload = self.read_json_body()
+        if payload is None:
+            return
+        customer = authenticate_customer(payload.get("email", ""), payload.get("password", ""))
+        if not customer:
+            return self.send_error_json(HTTPStatus.UNAUTHORIZED, "Email ou senha invalidos.")
+        customer = enrich_customer_with_plan(customer)
+        token, expires_at = create_customer_session(customer["id"])
+        body = json.dumps({"logged": True, "customer": customer}, ensure_ascii=False).encode("utf-8")
+        self.send_response(HTTPStatus.OK)
+        self.send_client_cookie(token, expires_at)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def handle_client_logout(self):
+        delete_customer_session(self.get_client_session_token())
+        body = json.dumps({"logged": False}, ensure_ascii=False).encode("utf-8")
+        self.send_response(HTTPStatus.OK)
+        self.clear_client_cookie()
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def handle_login(self):
         payload = self.read_json_body()
@@ -651,6 +980,16 @@ class AppHandler(BaseHTTPRequestHandler):
             conn.execute("UPDATE appointments SET status = ? WHERE id = ?", (status, appointment_id))
         return self.send_json(HTTPStatus.OK, read_public_data(include_admin=True))
 
+    def handle_save_plan(self):
+        payload = self.read_json_body()
+        if payload is None:
+            return
+        try:
+            save_monthly_plan(payload)
+        except ValueError as exc:
+            return self.send_error_json(HTTPStatus.BAD_REQUEST, str(exc))
+        return self.send_json(HTTPStatus.OK, read_public_data(include_admin=True))
+
     def read_json_body(self):
         content_length = int(self.headers.get("Content-Length", "0") or "0")
         raw = self.rfile.read(content_length) if content_length > 0 else b"{}"
@@ -669,6 +1008,18 @@ class AppHandler(BaseHTTPRequestHandler):
         morsel = cookie.get(SESSION_COOKIE)
         return morsel.value if morsel else None
 
+    def get_client_session_token(self):
+        cookie_header = self.headers.get("Cookie")
+        if not cookie_header:
+            return None
+        cookie = SimpleCookie()
+        cookie.load(cookie_header)
+        morsel = cookie.get(CLIENT_SESSION_COOKIE)
+        return morsel.value if morsel else None
+
+    def get_current_customer(self):
+        return get_customer_by_session(self.get_client_session_token())
+
     def is_authenticated(self):
         return session_is_valid(self.get_session_token())
 
@@ -682,8 +1033,15 @@ class AppHandler(BaseHTTPRequestHandler):
         expires_http = expires_at.astimezone(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT")
         self.send_header("Set-Cookie", f"{SESSION_COOKIE}={token}; Path=/; HttpOnly; SameSite=Lax; Expires={expires_http}")
 
+    def send_client_cookie(self, token, expires_at):
+        expires_http = expires_at.astimezone(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT")
+        self.send_header("Set-Cookie", f"{CLIENT_SESSION_COOKIE}={token}; Path=/; HttpOnly; SameSite=Lax; Expires={expires_http}")
+
     def clear_cookie(self):
         self.send_header("Set-Cookie", f"{SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0")
+
+    def clear_client_cookie(self):
+        self.send_header("Set-Cookie", f"{CLIENT_SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0")
 
     def send_json(self, status, payload):
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")

@@ -249,6 +249,58 @@
     .message { margin-top: 14px; min-height: 22px; color: var(--muted); line-height: 1.5; }
     .message.ok { color: var(--ok); }
     .message.err { color: var(--danger); }
+    .client-auth {
+      margin-bottom: 18px;
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 6px;
+      background: rgba(255,255,255,0.03);
+      padding: 16px;
+    }
+    .client-auth-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+    .mini-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+    .mini-tab {
+      min-height: 38px;
+      padding: 0 12px;
+      border-radius: 4px;
+      border: 1px solid rgba(255,255,255,0.12);
+      background: #0d0d0d;
+      color: var(--muted);
+      font-weight: 700;
+      text-transform: uppercase;
+      font-size: 0.75rem;
+      letter-spacing: 0.06em;
+    }
+    .mini-tab.active { background: var(--gold); border-color: var(--gold); color: #111; }
+    .client-card {
+      display: grid;
+      gap: 10px;
+      padding: 14px;
+      border-radius: 6px;
+      background: rgba(181,154,102,0.08);
+      border: 1px solid rgba(181,154,102,0.2);
+    }
+    .checkbox-line { display: flex; align-items: center; gap: 10px; margin-top: 4px; color: var(--ink); }
+    .checkbox-line input { width: 16px; height: 16px; accent-color: var(--gold); }
+    .status-chip {
+      display: inline-flex;
+      align-items: center;
+      min-height: 26px;
+      padding: 0 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(181,154,102,0.3);
+      color: var(--gold-2);
+      font-size: 0.72rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
     .proof { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; border-top: 1px solid rgba(255,255,255,0.07); border-bottom: 1px solid rgba(255,255,255,0.07); background: #060606; }
     .proof div { padding: 28px 22px; display: flex; gap: 14px; align-items: center; justify-content: center; border-right: 1px solid rgba(255,255,255,0.07); text-transform: uppercase; color: #d9d3ca; }
     .proof div:last-child { border-right: 0; }
@@ -398,16 +450,43 @@
           <p>Quando o cliente confirma, o horario fica ocupado para todos os outros clientes. O barbeiro recebe o aviso no e-mail cadastrado na area admin.</p>
         </div>
         <form class="form-panel" id="booking-form">
+          <div class="client-auth" id="client-auth">
+            <div class="client-auth-head">
+              <div>
+                <label style="display:block;">Conta do cliente</label>
+                <p class="mini" id="client-auth-status">Entre ou crie sua conta para marcar horario.</p>
+              </div>
+              <div class="mini-tabs">
+                <button class="mini-tab active" data-client-tab="login" type="button">Entrar</button>
+                <button class="mini-tab" data-client-tab="register" type="button">Cadastrar</button>
+              </div>
+            </div>
+            <div id="client-session-card" class="client-card" hidden></div>
+            <div id="client-login-form" class="field-grid">
+              <div class="field"><label for="client-login-email">E-mail</label><input id="client-login-email" name="email" type="email" placeholder="voce@email.com" /></div>
+              <div class="field"><label for="client-login-password">Senha</label><input id="client-login-password" name="password" type="password" placeholder="Sua senha" /></div>
+              <div class="field full"><button class="btn secondary" id="client-login-submit" type="button">Entrar na conta</button></div>
+            </div>
+            <div id="client-register-form" class="field-grid" hidden>
+              <div class="field"><label for="register-name">Nome</label><input id="register-name" name="name" placeholder="Seu nome completo" /></div>
+              <div class="field"><label for="register-email">E-mail</label><input id="register-email" name="email" type="email" placeholder="voce@email.com" /></div>
+              <div class="field"><label for="register-phone">Telefone</label><input id="register-phone" name="phone" placeholder="(31) 99999-9999" /></div>
+              <div class="field"><label for="register-cpf">CPF</label><input id="register-cpf" name="cpf" placeholder="00000000000" /></div>
+              <div class="field full"><label for="register-password">Senha</label><input id="register-password" name="password" type="password" placeholder="Crie uma senha" /></div>
+              <div class="field full"><button class="btn secondary" id="client-register-submit" type="button">Criar conta</button></div>
+            </div>
+            <div class="message" id="client-auth-message"></div>
+          </div>
           <div class="field-grid">
-            <div class="field">
+            <div class="field" hidden>
               <label for="client-name">Nome</label>
               <input id="client-name" name="clientName" required placeholder="Seu nome" />
             </div>
-            <div class="field">
+            <div class="field" hidden>
               <label for="client-phone">WhatsApp</label>
               <input id="client-phone" name="clientPhone" required placeholder="(11) 99999-9999" />
             </div>
-            <div class="field">
+            <div class="field" hidden>
               <label for="client-email">E-mail</label>
               <input id="client-email" name="clientEmail" type="email" placeholder="voce@email.com" />
             </div>
@@ -431,6 +510,10 @@
             <div class="field full">
               <label for="notes">Observacoes</label>
               <textarea id="notes" name="notes" placeholder="Ex: quero manter o topo, alergia a algum produto..."></textarea>
+            </div>
+            <div class="field full">
+              <label class="checkbox-line"><input id="plan-booking" name="planBooking" type="checkbox" value="1" /> <span>Usar corte do plano mensal</span></label>
+              <p class="mini">Liberado apenas para clientes logados com plano ativo e em servicos de corte dentro da validade.</p>
             </div>
           </div>
           <div class="hero-actions">
@@ -478,6 +561,7 @@
         <div class="admin-actions" style="margin-top:22px;">
           <div class="tabs" id="tabs">
             <button class="tab active" data-tab="agenda" type="button">Agenda</button>
+            <button class="tab" data-tab="clientes" type="button">Clientes</button>
             <button class="tab" data-tab="barbeiros" type="button">Barbeiros</button>
             <button class="tab" data-tab="servicos" type="button">Servicos</button>
             <button class="tab" data-tab="horarios" type="button">Horarios</button>
@@ -494,6 +578,18 @@
           <div class="admin-card">
             <h3>Agendamentos</h3>
             <div class="list" id="appointment-list"></div>
+          </div>
+        </div>
+
+        <div id="tab-clientes" class="tab-panel" hidden>
+          <div class="admin-card">
+            <div class="admin-actions">
+              <div>
+                <h3>Clientes e plano mensal</h3>
+                <p class="mini">Veja ha quanto tempo cada cliente nao marca corte e marque a vigencia do plano mensal.</p>
+              </div>
+            </div>
+            <div class="list" id="customer-list"></div>
           </div>
         </div>
 
@@ -542,6 +638,11 @@
       barbers: [],
       slots: [],
       appointments: [],
+      customers: [],
+      plans: [],
+      customerLogged: false,
+      customer: null,
+      clientTab: "login",
       selectedTime: "",
       adminLogged: false,
       activeTab: "agenda",
@@ -572,6 +673,65 @@
     function whatsappUrl(text) {
       const number = (state.settings.whatsapp || "").replace(/\D/g, "");
       return "https://wa.me/" + number + "?text=" + encodeURIComponent(text || "Ola! Vim pelo site da Barbearia da Vinte.");
+    }
+
+    function formatDateBr(isoDate) {
+      if (!isoDate || !isoDate.includes("-")) return isoDate || "";
+      const [year, month, day] = isoDate.split("-");
+      return `${day}/${month}/${year}`;
+    }
+
+    function setClientTab(tab) {
+      state.clientTab = tab;
+      document.querySelectorAll("[data-client-tab]").forEach((button) => button.classList.toggle("active", button.dataset.clientTab === tab));
+      $("client-login-form").hidden = tab !== "login";
+      $("client-register-form").hidden = tab !== "register";
+    }
+
+    function renderClientSession() {
+      const customer = state.customer;
+      $("client-session-card").hidden = !customer;
+      if (!customer) {
+        $("client-auth-status").textContent = "Entre ou crie sua conta para marcar horario.";
+        $("client-session-card").innerHTML = "";
+        $("client-name").value = "";
+        $("client-phone").value = "";
+        $("client-email").value = "";
+        return;
+      }
+      $("client-name").value = customer.name || "";
+      $("client-phone").value = customer.phone || "";
+      $("client-email").value = customer.email || "";
+      const plan = customer.active_plan;
+      $("client-auth-status").textContent = `Conta ativa de ${customer.name}.`;
+      $("client-session-card").innerHTML = `
+        <strong>${escapeHtml(customer.name)}</strong>
+        <p class="mini">${escapeHtml(customer.email)} · ${escapeHtml(customer.phone)}</p>
+        ${plan ? `<p><span class="status-chip">Plano ativo ${escapeHtml(formatDateBr(plan.start_date))} ate ${escapeHtml(formatDateBr(plan.end_date))}</span></p>` : '<p class="mini">Sem plano mensal ativo.</p>'}
+        <div class="row-actions"><button class="btn ghost" id="client-logout-button" type="button">Sair da conta</button></div>
+      `;
+      const logoutButton = $("client-logout-button");
+      if (logoutButton) {
+        logoutButton.addEventListener("click", async () => {
+          await fetchJson("/api/client/logout", { method: "POST", body: "{}" });
+          state.customerLogged = false;
+          state.customer = null;
+          renderClientSession();
+          setMessage($("client-auth-message"), "Conta desconectada.", "ok");
+        });
+      }
+    }
+
+    async function checkClientSession() {
+      try {
+        const payload = await fetchJson("/api/client/session");
+        state.customerLogged = Boolean(payload.logged);
+        state.customer = payload.customer || null;
+      } catch {
+        state.customerLogged = false;
+        state.customer = null;
+      }
+      renderClientSession();
     }
 
     function renderPublic() {
@@ -610,6 +770,7 @@
           loadAvailability();
         });
       });
+      renderClientSession();
       loadAvailability();
     }
 
@@ -644,7 +805,13 @@
 
     $("booking-form").addEventListener("submit", async (event) => {
       event.preventDefault();
-      const formData = new FormData(event.currentTarget);
+      if (!state.customerLogged || !state.customer) {
+        setMessage($("booking-message"), "Entre ou crie sua conta para marcar horario.", "err");
+        setClientTab("login");
+        return;
+      }
+      const form = event.currentTarget;
+      const formData = new FormData(form);
       if (!$("time-input").value) {
         setMessage($("booking-message"), "Escolha um horario livre para confirmar.", "err");
         return;
@@ -654,8 +821,10 @@
         const payload = Object.fromEntries(formData.entries());
         payload.serviceId = Number(payload.serviceId);
         payload.barberId = Number(payload.barberId);
+        payload.planBooking = $("plan-booking").checked;
         const response = await fetchJson("/api/appointments", { method: "POST", body: JSON.stringify(payload) });
-        event.currentTarget.reset();
+        form.reset();
+        renderClientSession();
         setDefaultDate();
         await loadAvailability();
         setMessage($("booking-message"), `Horario confirmado com ${response.appointment.barber_name} em ${response.appointment.date} as ${response.appointment.time}.`, "ok");
@@ -719,6 +888,7 @@
 
     function renderAdmin() {
       renderAppointments();
+      renderCustomers();
       renderAdminBarbers();
       renderAdminServices();
       renderSettings();
@@ -732,7 +902,7 @@
           <strong>${escapeHtml(item.date)} as ${escapeHtml(item.time)} · ${escapeHtml(item.client_name)}</strong>
           <p class="mini">${escapeHtml(item.service_name)} com ${escapeHtml(item.barber_name)} · ${money(item.service_price)}</p>
           <p class="mini">WhatsApp: ${escapeHtml(item.client_phone)} · E-mail: ${escapeHtml(item.client_email || "nao informado")}</p>
-          <p class="mini">Status: ${escapeHtml(item.status)} · Criado em ${escapeHtml(item.created_at)}</p>
+          <p class="mini">Status: ${escapeHtml(item.status)} · Criado em ${escapeHtml(item.created_at)} ${item.plan_booking ? '· Corte do plano' : ''}</p>
           ${item.notes ? `<p class="mini">Obs: ${escapeHtml(item.notes)}</p>` : ""}
           <div class="row-actions">
             <button class="btn ghost" data-status="done" data-id="${item.id}" type="button">Concluido</button>
@@ -744,6 +914,50 @@
         button.addEventListener("click", async () => {
           await fetchJson("/api/admin/appointment-status", { method: "POST", body: JSON.stringify({ id: Number(button.dataset.id), status: button.dataset.status }) });
           await refreshAdmin();
+        });
+      });
+    }
+
+    function renderCustomers() {
+      $("customer-list").innerHTML = state.customers.length ? state.customers.map((customer) => {
+        const plan = customer.active_plan;
+        const days = customer.days_since_last_haircut;
+        return `
+          <div class="admin-card">
+            <h3>${escapeHtml(customer.name)}</h3>
+            <p class="mini">${escapeHtml(customer.email)} · ${escapeHtml(customer.phone)}</p>
+            <p class="mini">CPF: ${escapeHtml(customer.cpf)}</p>
+            <p class="mini">${days === null ? "Ainda nao marcou corte." : `Ultimo corte ha ${days} dia(s)${customer.last_haircut_date ? ` (${escapeHtml(formatDateBr(customer.last_haircut_date))})` : ""}.`}</p>
+            <p class="mini">${plan ? `Plano ativo de ${escapeHtml(formatDateBr(plan.start_date))} ate ${escapeHtml(formatDateBr(plan.end_date))}.` : "Sem plano ativo."}</p>
+            <div class="field-grid" style="margin-top:12px;">
+              <div class="field"><label>Inicio do plano</label><input data-plan-start="${customer.id}" type="date" value="${plan ? escapeHtml(plan.start_date) : ''}" /></div>
+              <div class="field"><label>Fim do plano</label><input data-plan-end="${customer.id}" type="date" value="${plan ? escapeHtml(plan.end_date) : ''}" /></div>
+              <div class="field full"><label>Observacao</label><input data-plan-note="${customer.id}" type="text" value="${plan ? escapeHtml(plan.note || "") : ''}" placeholder="Ex: plano pago no pix" /></div>
+            </div>
+            <div class="row-actions">
+              <button class="btn secondary" data-save-plan="${customer.id}" type="button">Salvar plano</button>
+              <a class="btn ghost" href="${escapeHtml('https://wa.me/55' + customer.phone.replace(/\\D/g, '').replace(/^55/, '') + '?text=' + encodeURIComponent(`Ola, ${customer.name}! Sentimos sua falta na Barbearia da Vinte.`))}" target="_blank" rel="noreferrer">WhatsApp</a>
+            </div>
+          </div>
+        `;
+      }).join("") : '<p class="mini">Nenhum cliente cadastrado ainda.</p>';
+      document.querySelectorAll("[data-save-plan]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const customerId = Number(button.dataset.savePlan);
+          const startDate = document.querySelector(`[data-plan-start="${customerId}"]`).value;
+          const endDate = document.querySelector(`[data-plan-end="${customerId}"]`).value;
+          const note = document.querySelector(`[data-plan-note="${customerId}"]`).value;
+          try {
+            const payload = await fetchJson("/api/admin/plan", {
+              method: "POST",
+              body: JSON.stringify({ customerId, startDate, endDate, note }),
+            });
+            Object.assign(state, payload);
+            renderAdmin();
+            setMessage($("admin-message"), "Plano mensal salvo.", "ok");
+          } catch (error) {
+            setMessage($("admin-message"), error.message, "err");
+          }
         });
       });
     }
@@ -864,13 +1078,50 @@
         updateAdminView();
       }
     });
+    document.querySelectorAll("[data-client-tab]").forEach((button) => {
+      button.addEventListener("click", () => setClientTab(button.dataset.clientTab));
+    });
+    $("client-login-submit").addEventListener("click", async () => {
+      try {
+        const payload = {
+          email: $("client-login-email").value,
+          password: $("client-login-password").value,
+        };
+        const response = await fetchJson("/api/client/login", { method: "POST", body: JSON.stringify(payload) });
+        state.customerLogged = Boolean(response.logged);
+        state.customer = response.customer || null;
+        renderClientSession();
+        setMessage($("client-auth-message"), "Conta conectada.", "ok");
+      } catch (error) {
+        setMessage($("client-auth-message"), error.message, "err");
+      }
+    });
+    $("client-register-submit").addEventListener("click", async () => {
+      try {
+        const payload = {
+          name: $("register-name").value,
+          email: $("register-email").value,
+          phone: $("register-phone").value,
+          cpf: $("register-cpf").value,
+          password: $("register-password").value,
+        };
+        const response = await fetchJson("/api/client/register", { method: "POST", body: JSON.stringify(payload) });
+        state.customerLogged = Boolean(response.logged);
+        state.customer = response.customer || null;
+        renderClientSession();
+        setMessage($("client-auth-message"), "Conta criada e conectada.", "ok");
+      } catch (error) {
+        setMessage($("client-auth-message"), error.message, "err");
+      }
+    });
     $("login-form").addEventListener("submit", async (event) => {
       event.preventDefault();
+      const form = event.currentTarget;
       setMessage($("login-message"), "Entrando...", "");
       try {
-        await fetchJson("/api/admin/login", { method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(event.currentTarget).entries())) });
+        await fetchJson("/api/admin/login", { method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(form).entries())) });
         state.adminLogged = true;
-        event.currentTarget.reset();
+        form.reset();
         setMessage($("login-message"), "", "");
         updateAdminView();
         try {
@@ -897,6 +1148,7 @@
     $("date-input").addEventListener("change", loadAvailability);
 
     setDefaultDate();
+    checkClientSession().catch(() => {});
     loadPublicData().catch((error) => setMessage($("booking-message"), error.message, "err"));
     if (location.pathname === "/admin") openAdmin();
   </script>
