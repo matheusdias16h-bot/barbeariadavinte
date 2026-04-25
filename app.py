@@ -39,17 +39,25 @@ DEFAULT_SETTINGS = {
 }
 
 DEFAULT_SERVICES = [
-    ("Corte masculino", "Degrade, social, tesoura ou maquina com acabamento.", 50.0, 45),
-    ("Barba", "Toalha quente, navalha e finalizacao.", 40.0, 35),
-    ("Corte + barba", "Pacote completo para sair pronto.", 80.0, 75),
-    ("Sobrancelha", "Limpeza e desenho discreto.", 20.0, 15),
+    ("Corte", "", 30.0, 45),
+    ("Barba", "", 20.0, 15),
+    ("Barboterapia", "", 35.0, 30),
+    ("Sobrancelha", "", 10.0, 15),
+    ("Bigode/Limpeza", "", 5.0, 15),
+    ("Cartãozinho completo", "", 0.0, 60),
+    ("Cavanhaque", "", 15.0, 15),
+    ("Já tenho mensal", "", 0.0, 60),
+    ("Luzes", "", 60.0, 120),
+    ("Pezinho", "", 10.0, 15),
+    ("Pigmentação", "", 25.0, 30),
+    ("Pigmentação colorida", "", 90.0, 120),
+    ("Platinado/Nevou", "", 90.0, 30),
 ]
 
 DEFAULT_BARBERS = [
-    ("Junior", "Especialista em degrade", "junior@barbeariadavinte.com", ""),
-    ("Daniel", "Barba e navalha", "daniel@barbeariadavinte.com", ""),
-    ("Vitor", "Corte classico", "vitor@barbeariadavinte.com", ""),
-    ("Luan", "Coloracao e design", "luan@barbeariadavinte.com", ""),
+    ("Yuri", "todas", "yuri@barbeariadavinte.com", ""),
+    ("Alisson", "todas", "alisson@barbeariadavinte.com", ""),
+    ("Venê", "todas", "vene@barbeariadavinte.com", ""),
 ]
 
 DEFAULT_TIMES = ["09:00", "10:00", "11:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00"]
@@ -591,10 +599,15 @@ def save_admin_data(payload):
                 1 if item.get("active", True) else 0,
             )
             if service_id:
-                conn.execute(
+                cursor = conn.execute(
                     "UPDATE services SET name = ?, description = ?, price = ?, duration = ?, active = ? WHERE id = ?",
                     (*values, service_id),
                 )
+                if cursor.rowcount == 0:
+                    conn.execute(
+                        "INSERT INTO services (id, name, description, price, duration, active) VALUES (?, ?, ?, ?, ?, ?)",
+                        (service_id, *values),
+                    )
             else:
                 cursor = conn.execute(
                     "INSERT INTO services (name, description, price, duration, active) VALUES (?, ?, ?, ?, ?)",
@@ -621,10 +634,15 @@ def save_admin_data(payload):
                 1 if item.get("active", True) else 0,
             )
             if barber_id:
-                conn.execute(
+                cursor = conn.execute(
                     "UPDATE barbers SET name = ?, specialty = ?, email = ?, photo = ?, active = ? WHERE id = ?",
                     (*values, barber_id),
                 )
+                if cursor.rowcount == 0:
+                    conn.execute(
+                        "INSERT INTO barbers (id, name, specialty, email, photo, active) VALUES (?, ?, ?, ?, ?, ?)",
+                        (barber_id, *values),
+                    )
             else:
                 cursor = conn.execute(
                     "INSERT INTO barbers (name, specialty, email, photo, active) VALUES (?, ?, ?, ?, ?)",
