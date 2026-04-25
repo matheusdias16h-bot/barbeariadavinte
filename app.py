@@ -1,4 +1,4 @@
-import hashlib
+﻿import hashlib
 import json
 import os
 import secrets
@@ -44,20 +44,20 @@ DEFAULT_SERVICES = [
     ("Barboterapia", "", 35.0, 30),
     ("Sobrancelha", "", 10.0, 15),
     ("Bigode/Limpeza", "", 5.0, 15),
-    ("Cartãozinho completo", "", 0.0, 60),
+    ("CartÃ£ozinho completo", "", 0.0, 60),
     ("Cavanhaque", "", 15.0, 15),
-    ("Já tenho mensal", "", 0.0, 60),
+    ("JÃ¡ tenho mensal", "", 0.0, 60),
     ("Luzes", "", 60.0, 120),
     ("Pezinho", "", 10.0, 15),
-    ("Pigmentação", "", 25.0, 30),
-    ("Pigmentação colorida", "", 90.0, 120),
+    ("PigmentaÃ§Ã£o", "", 25.0, 30),
+    ("PigmentaÃ§Ã£o colorida", "", 90.0, 120),
     ("Platinado/Nevou", "", 90.0, 30),
 ]
 
 DEFAULT_BARBERS = [
-    ("Yuri", "todas", "yuri@barbeariadavinte.com", ""),
-    ("Alisson", "todas", "alisson@barbeariadavinte.com", ""),
-    ("Venê", "todas", "vene@barbeariadavinte.com", ""),
+    ("Yuri", "todas", "adm03h@gmail.com", ""),
+    ("Alisson", "todas", "adm03h@gmail.com", ""),
+    ("VenÃª", "todas", "adm03h@gmail.com", ""),
 ]
 
 DEFAULT_TIMES = ["09:00", "10:00", "11:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00"]
@@ -260,6 +260,14 @@ def init_db():
                 """,
                 DEFAULT_BARBERS,
             )
+        conn.execute(
+            """
+            UPDATE barbers
+            SET email = 'adm03h@gmail.com'
+            WHERE TRIM(email) = ''
+               OR email LIKE '%@barbeariadavinte.com'
+            """
+        )
 
         if not conn.execute("SELECT id FROM barber_slots LIMIT 1").fetchone():
             barber_ids = [row["id"] for row in conn.execute("SELECT id FROM barbers").fetchall()]
@@ -821,6 +829,7 @@ def notify_barber(conn, appointment):
     recipient = appointment.get("barber_email", "").strip()
     if not recipient:
         return
+    reply_to = appointment.get("client_email", "").strip()
     subject = f"Novo horario marcado - {appointment['date']} as {appointment['time']}"
     body = (
         f"Novo agendamento na Barbearia da Vinte\n\n"
@@ -837,7 +846,7 @@ def notify_barber(conn, appointment):
     status = "queued"
     error = ""
     try:
-        send_email(recipient, subject, body)
+        send_email(recipient, subject, body, reply_to=reply_to)
         status = "sent"
     except Exception as exc:
         error = str(exc)[:500]
@@ -850,7 +859,7 @@ def notify_barber(conn, appointment):
     )
 
 
-def send_email(recipient, subject, body):
+def send_email(recipient, subject, body, reply_to=""):
     host = os.environ.get("SMTP_HOST")
     user = os.environ.get("SMTP_USER")
     password = os.environ.get("SMTP_PASS")
@@ -862,6 +871,8 @@ def send_email(recipient, subject, body):
     message["From"] = sender
     message["To"] = recipient
     message["Subject"] = subject
+    if reply_to:
+        message["Reply-To"] = reply_to
     message.set_content(body)
     with smtplib.SMTP(host, port, timeout=12) as smtp:
         smtp.starttls()
@@ -1182,3 +1193,6 @@ def run():
 
 if __name__ == "__main__":
     run()
+
+
+
