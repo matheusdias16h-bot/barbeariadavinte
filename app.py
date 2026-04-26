@@ -830,17 +830,19 @@ def notify_barber(conn, appointment):
     if not recipient:
         return
     reply_to = appointment.get("client_email", "").strip()
-    subject = f"Novo horario marcado - {appointment['date']} as {appointment['time']}"
+    subject = f"{appointment['client_name']} marcou horario em {appointment['date']} as {appointment['time']}"
     body = (
-        f"Novo agendamento na Barbearia da Vinte\n\n"
+        f"Novo agendamento para {appointment['barber_name']}\n\n"
+        f"Resumo rapido:\n"
         f"Cliente: {appointment['client_name']}\n"
+        f"Data: {appointment['date']}\n"
+        f"Horario: {appointment['time']}\n\n"
+        f"Detalhes completos:\n"
         f"WhatsApp: {appointment['client_phone']}\n"
         f"E-mail: {appointment['client_email'] or 'nao informado'}\n"
         f"Servico: {appointment['service_name']}\n"
         f"Valor: R$ {appointment['service_price']:.2f}\n"
         f"Barbeiro: {appointment['barber_name']}\n"
-        f"Data: {appointment['date']}\n"
-        f"Horario: {appointment['time']}\n"
         f"Observacoes: {appointment['notes'] or 'nenhuma'}\n"
     )
     status = "queued"
