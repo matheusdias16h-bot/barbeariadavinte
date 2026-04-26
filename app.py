@@ -14,7 +14,11 @@ from urllib.parse import parse_qs, urlparse
 
 
 BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = BASE_DIR / "barbearia_da_vinte_data.sqlite"
+DATA_DIR = Path(os.environ.get("DATA_DIR", "")).expanduser() if os.environ.get("DATA_DIR") else None
+DB_PATH = Path(os.environ.get("DB_PATH", "")).expanduser() if os.environ.get("DB_PATH") else (
+    DATA_DIR / "barbearia_da_vinte_data.sqlite" if DATA_DIR else BASE_DIR / "barbearia_da_vinte_data.sqlite"
+)
+DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 INDEX_PATH = BASE_DIR / "index.html"
 STATIC_DIR = BASE_DIR / "static"
 HOST = os.environ.get("HOST", "127.0.0.1")
@@ -424,6 +428,10 @@ def sanitize_customer(row):
     return customer
 
 
+def digits_only(value):
+    return "".join(ch for ch in str(value or "") if ch.isdigit())
+
+
 def time_to_minutes(time_text):
     hour, minute = [int(part) for part in time_text.split(":")]
     return hour * 60 + minute
@@ -544,12 +552,27 @@ def get_customer_by_id(customer_id):
         return sanitize_customer(row)
 
 
-def authenticate_customer(email, password):
+def authenticate_customer(identifier, password):
+    identifier_text = str(identifier).strip()
+    identifier_digits = digits_only(identifier_text)
     with db_connection() as conn:
         row = conn.execute(
-            "SELECT id, name, email, phone, cpf, password_hash, created_at FROM customers WHERE email = ?",
-            (str(email).strip().lower(),),
+            """
+            SELECT id, name, email, phone, cpf, password_hash, created_at
+            FROM customers
+            WHERE email = ? OR cpf = ?
+            LIMIT 1
+            """,
+            (identifier_text.lower(), identifier_digits),
         ).fetchone()
+        if not row and identifier_digits:
+            rows = conn.execute(
+                "SELECT id, name, email, phone, cpf, password_hash, created_at FROM customers"
+            ).fetchall()
+            for item in rows:
+                if digits_only(item["phone"]) == identifier_digits:
+                    row = item
+                    break
         if not row or row["password_hash"] != password_hash(password):
             return None
         return sanitize_customer(row)
@@ -1029,9 +1052,9 @@ class AppHandler(BaseHTTPRequestHandler):
         payload = self.read_json_body()
         if payload is None:
             return
-        customer = authenticate_customer(payload.get("email", ""), payload.get("password", ""))
+        customer = authenticate_customer(payload.get("identifier") or payload.get("email", ""), payload.get("password", ""))
         if not customer:
-            return self.send_error_json(HTTPStatus.UNAUTHORIZED, "Email ou senha invalidos.")
+            return self.send_error_json(HTTPStatus.UNAUTHORIZED, "E-mail, telefone, CPF ou senha invalidos.")
         customer = enrich_customer_with_plan(customer)
         token, expires_at = create_customer_session(customer["id"])
         body = json.dumps({"logged": True, "customer": customer}, ensure_ascii=False).encode("utf-8")

@@ -357,18 +357,20 @@
     }
     .admin-head, .admin-actions { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
     .admin-head h2 { text-transform: uppercase; margin-top: 8px; }
-    .tabs { display: flex; gap: 8px; flex-wrap: wrap; margin: 22px 0; }
-    .tab { padding: 11px 15px; border: 1px solid rgba(255,255,255,0.12); background: #121212; border-radius: 4px; color: #d6d0c7; }
-    .tab.active { background: var(--gold); color: #111; border-color: var(--gold); font-weight: 900; }
-    .admin-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
-    .admin-card { border: 1px solid rgba(255,255,255,0.1); background: #101010; border-radius: 5px; padding: 16px; }
-    .admin-card h3 { text-transform: uppercase; margin-bottom: 14px; }
-    .row-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
-    .mini { color: var(--muted); font-size: 0.86rem; line-height: 1.5; }
-    .list { display: grid; gap: 12px; }
-    .appointment { border: 1px solid rgba(255,255,255,0.1); border-left: 4px solid var(--gold); padding: 14px; border-radius: 4px; background: #0b0b0b; }
-    .appointment strong { display: block; margin-bottom: 6px; }
-    .schedule-table { display: grid; gap: 10px; }
+      .tabs { display: flex; gap: 8px; flex-wrap: wrap; margin: 22px 0; }
+      .tab { padding: 11px 15px; border: 1px solid rgba(255,255,255,0.12); background: #121212; border-radius: 4px; color: #d6d0c7; }
+      .tab.active { background: var(--gold); color: #111; border-color: var(--gold); font-weight: 900; }
+      .admin-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+      .admin-card { border: 1px solid rgba(255,255,255,0.1); background: #101010; border-radius: 5px; padding: 16px; }
+      .admin-card h3 { text-transform: uppercase; margin-bottom: 14px; }
+      .row-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+      .mini { color: var(--muted); font-size: 0.86rem; line-height: 1.5; }
+      .list { display: grid; gap: 12px; }
+      .appointment { border: 1px solid rgba(255,255,255,0.1); border-left: 4px solid var(--gold); padding: 14px; border-radius: 4px; background: #0b0b0b; }
+      .appointment strong { display: block; margin-bottom: 6px; }
+      .outbox-item { border: 1px solid rgba(255,255,255,0.08); border-left: 4px solid #4c9b68; padding: 14px; border-radius: 4px; background: #0b0b0b; }
+      .outbox-item.error { border-left-color: #cf6a58; }
+      .schedule-table { display: grid; gap: 10px; }
     .day-row { display: grid; grid-template-columns: 120px 1fr; gap: 10px; align-items: start; }
     .chips { display: flex; flex-wrap: wrap; gap: 7px; }
     .chip { border: 1px solid rgba(255,255,255,0.12); background: #080808; color: #ddd; padding: 8px 10px; border-radius: 4px; }
@@ -480,7 +482,7 @@
             </div>
             <div id="client-session-card" class="client-card" hidden></div>
             <div id="client-login-form" class="field-grid">
-              <div class="field"><label for="client-login-email">E-mail</label><input id="client-login-email" name="email" type="email" placeholder="voce@email.com" /></div>
+                <div class="field"><label for="client-login-email">E-mail, telefone ou CPF</label><input id="client-login-email" name="identifier" type="text" placeholder="voce@email.com ou 31999999999" /></div>
               <div class="field"><label for="client-login-password">Senha</label><input id="client-login-password" name="password" type="password" placeholder="Sua senha" /></div>
               <div class="field full"><button class="btn secondary" id="client-login-submit" type="button">Entrar na conta</button></div>
             </div>
@@ -577,14 +579,15 @@
 
       <div id="dashboard-shell" hidden>
         <div class="admin-actions" style="margin-top:22px;">
-          <div class="tabs" id="tabs">
-            <button class="tab active" data-tab="agenda" type="button">Agenda</button>
-            <button class="tab" data-tab="clientes" type="button">Clientes</button>
-            <button class="tab" data-tab="barbeiros" type="button">Barbeiros</button>
-            <button class="tab" data-tab="servicos" type="button">Servicos</button>
-            <button class="tab" data-tab="horarios" type="button">Horarios</button>
-            <button class="tab" data-tab="site" type="button">Site</button>
-          </div>
+            <div class="tabs" id="tabs">
+              <button class="tab active" data-tab="agenda" type="button">Agenda</button>
+              <button class="tab" data-tab="clientes" type="button">Clientes</button>
+              <button class="tab" data-tab="emails" type="button">E-mails</button>
+              <button class="tab" data-tab="barbeiros" type="button">Barbeiros</button>
+              <button class="tab" data-tab="servicos" type="button">Servicos</button>
+              <button class="tab" data-tab="horarios" type="button">Horarios</button>
+              <button class="tab" data-tab="site" type="button">Site</button>
+            </div>
           <div class="row-actions">
             <button class="btn secondary" id="export-admin" type="button">Exportar</button>
             <button class="btn ghost" id="logout-admin" type="button">Sair</button>
@@ -599,17 +602,29 @@
           </div>
         </div>
 
-        <div id="tab-clientes" class="tab-panel" hidden>
-          <div class="admin-card">
-            <div class="admin-actions">
-              <div>
+          <div id="tab-clientes" class="tab-panel" hidden>
+            <div class="admin-card">
+              <div class="admin-actions">
+                <div>
                 <h3>Clientes e plano mensal</h3>
                 <p class="mini">Veja ha quanto tempo cada cliente nao marca corte e marque a vigencia do plano mensal.</p>
               </div>
             </div>
-            <div class="list" id="customer-list"></div>
+              <div class="list" id="customer-list"></div>
+            </div>
           </div>
-        </div>
+
+          <div id="tab-emails" class="tab-panel" hidden>
+            <div class="admin-card">
+              <div class="admin-actions">
+                <div>
+                  <h3>Status dos e-mails</h3>
+                  <p class="mini">Aqui aparecem as ultimas tentativas de envio para os barbeiros. Se der erro, o motivo aparece abaixo.</p>
+                </div>
+              </div>
+              <div class="list" id="email-outbox-list"></div>
+            </div>
+          </div>
 
         <div id="tab-barbeiros" class="tab-panel" hidden>
           <div class="admin-actions"><h3>Barbeiros</h3><button class="btn secondary" id="add-barber" type="button">Adicionar barbeiro</button></div>
@@ -658,6 +673,7 @@
       appointments: [],
       customers: [],
       plans: [],
+      emailOutbox: [],
       customerLogged: false,
       customer: null,
       clientTab: "login",
@@ -946,6 +962,7 @@
     function renderAdmin() {
       renderAppointments();
       renderCustomers();
+      renderEmailOutbox();
       renderAdminBarbers();
       renderAdminServices();
       renderSettings();
@@ -1017,6 +1034,17 @@
           }
         });
       });
+    }
+
+    function renderEmailOutbox() {
+      $("email-outbox-list").innerHTML = state.emailOutbox.length ? state.emailOutbox.map((item) => `
+        <div class="outbox-item ${item.status !== "sent" ? "error" : ""}">
+          <strong>${escapeHtml(item.recipient)}</strong>
+          <p class="mini">Status: ${escapeHtml(item.status)} · Criado em ${escapeHtml(item.created_at)}</p>
+          <p class="mini">Assunto: ${escapeHtml(item.subject)}</p>
+          ${item.error ? `<p class="mini">Erro: ${escapeHtml(item.error)}</p>` : '<p class="mini">Sem erro registrado.</p>'}
+        </div>
+      `).join("") : '<p class="mini">Nenhuma tentativa de envio ainda.</p>';
     }
 
     function renderAdminBarbers() {
@@ -1138,12 +1166,12 @@
     document.querySelectorAll("[data-client-tab]").forEach((button) => {
       button.addEventListener("click", () => setClientTab(button.dataset.clientTab));
     });
-    $("client-login-submit").addEventListener("click", async () => {
-      try {
-        const payload = {
-          email: $("client-login-email").value,
-          password: $("client-login-password").value,
-        };
+      $("client-login-submit").addEventListener("click", async () => {
+        try {
+          const payload = {
+            identifier: $("client-login-email").value,
+            password: $("client-login-password").value,
+          };
         const response = await fetchJson("/api/client/login", { method: "POST", body: JSON.stringify(payload) });
         state.customerLogged = Boolean(response.logged);
         state.customer = response.customer || null;

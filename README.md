@@ -59,3 +59,11 @@ Configure:
 - Environment Variable: `HOST=0.0.0.0`
 
 O Render define `PORT` automaticamente.
+
+Para manter clientes, agendamentos e sessoes depois de restart/redeploy, configure tambem um caminho persistente para o banco:
+
+- `DB_PATH=/var/data/barbearia_da_vinte_data.sqlite`
+
+Se preferir, voce tambem pode definir:
+
+- `DATA_DIR=/var/data`
