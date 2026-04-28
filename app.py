@@ -285,6 +285,22 @@ def init_db():
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS barber_reviews (
+                id INTEGER PRIMARY KEY,
+                appointment_id INTEGER NOT NULL UNIQUE,
+                customer_id INTEGER NOT NULL,
+                barber_id INTEGER NOT NULL,
+                rating INTEGER NOT NULL,
+                comment TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (appointment_id) REFERENCES appointments(id) ON DELETE CASCADE,
+                FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE,
+                FOREIGN KEY (barber_id) REFERENCES barbers(id) ON DELETE CASCADE
+            )
+            """
+        )
 
         if not conn.execute("SELECT id FROM settings WHERE id = 1").fetchone():
             conn.execute(
@@ -342,6 +358,19 @@ def read_settings(conn):
 def read_public_data(include_admin=False):
     with db_connection() as conn:
         settings = read_settings(conn)
+        review_summary = {
+            int(row["barber_id"]): {
+                "review_avg": round(float(row["avg_rating"] or 0), 1),
+                "review_count": int(row["review_count"] or 0),
+            }
+            for row in conn.execute(
+                """
+                SELECT barber_id, AVG(rating) AS avg_rating, COUNT(*) AS review_count
+                FROM barber_reviews
+                GROUP BY barber_id
+                """
+            ).fetchall()
+        }
         services = [
             dict(row)
             for row in conn.execute(
@@ -349,7 +378,7 @@ def read_public_data(include_admin=False):
             ).fetchall()
         ]
         barbers = [
-            dict(row)
+            {**dict(row), **review_summary.get(int(row["id"]), {"review_avg": 0, "review_count": 0})}
             for row in conn.execute(
                 "SELECT id, name, specialty, email, photo, active FROM barbers WHERE active = 1 ORDER BY id"
             ).fetchall()
@@ -371,6 +400,7 @@ def read_public_data(include_admin=False):
             payload["appointments"] = read_appointments(conn)
             payload["customers"] = read_customers(conn)
             payload["plans"] = read_plans(conn)
+            payload["reviews"] = read_barber_reviews(conn)
             payload["emailOutbox"] = [
                 dict(row)
                 for row in conn.execute(
@@ -409,6 +439,48 @@ def read_appointments(conn):
         JOIN barbers b ON b.id = a.barber_id
         ORDER BY a.date DESC, a.time DESC, a.id DESC
         """
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def read_barber_reviews(conn):
+    rows = conn.execute(
+        """
+        SELECT r.id, r.appointment_id, r.customer_id, r.barber_id, r.rating, r.comment, r.created_at,
+               c.name AS customer_name,
+               b.name AS barber_name,
+               a.date, a.time, a.service_id
+        FROM barber_reviews r
+        JOIN customers c ON c.id = r.customer_id
+        JOIN barbers b ON b.id = r.barber_id
+        JOIN appointments a ON a.id = r.appointment_id
+        ORDER BY a.date DESC, a.time DESC, r.id DESC
+        """
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def read_reviewable_appointments(conn, customer_id):
+    rows = conn.execute(
+        """
+        SELECT a.id, a.date, a.time, a.barber_id, b.name AS barber_name,
+               COALESCE((
+                   SELECT GROUP_CONCAT(s2.name, ' + ')
+                   FROM appointment_services aps
+                   JOIN services s2 ON s2.id = aps.service_id
+                   WHERE aps.appointment_id = a.id
+               ), s.name) AS service_name
+        FROM appointments a
+        JOIN services s ON s.id = a.service_id
+        JOIN barbers b ON b.id = a.barber_id
+        LEFT JOIN barber_reviews r ON r.appointment_id = a.id
+        WHERE a.customer_id = ?
+          AND a.status = 'done'
+          AND r.id IS NULL
+        ORDER BY a.date DESC, a.time DESC, a.id DESC
+        """
+        ,
+        (customer_id,),
     ).fetchall()
     return [dict(row) for row in rows]
 
@@ -737,7 +809,52 @@ def enrich_customer_with_plan(customer):
             "note": plan["note"],
             "active": plan["active"],
         }) if plan else None
+        customer["reviewable_appointments"] = read_reviewable_appointments(conn, customer["id"])
     return customer
+
+
+def create_barber_review(payload, customer):
+    if not customer:
+        raise ValueError("Entre na sua conta para avaliar o barbeiro.")
+    appointment_id = int(payload.get("appointmentId") or 0)
+    rating = int(payload.get("rating") or 0)
+    comment = str(payload.get("comment", "")).strip()
+    if not appointment_id or rating < 1 or rating > 5:
+        raise ValueError("Escolha uma nota de 1 a 5 para enviar a avaliacao.")
+    with db_connection() as conn:
+        appointment = conn.execute(
+            """
+            SELECT a.id, a.customer_id, a.barber_id, a.status, a.date, a.time, b.name AS barber_name
+            FROM appointments a
+            JOIN barbers b ON b.id = a.barber_id
+            WHERE a.id = ?
+            """,
+            (appointment_id,),
+        ).fetchone()
+        if not appointment:
+            raise ValueError("Agendamento nao encontrado.")
+        if int(appointment["customer_id"] or 0) != int(customer["id"]):
+            raise ValueError("Esse agendamento nao pertence a sua conta.")
+        if appointment["status"] != "done":
+            raise ValueError("A avaliacao so pode ser feita depois do atendimento concluido.")
+        exists = conn.execute("SELECT id FROM barber_reviews WHERE appointment_id = ?", (appointment_id,)).fetchone()
+        if exists:
+            raise ValueError("Esse atendimento ja recebeu uma avaliacao.")
+        conn.execute(
+            """
+            INSERT INTO barber_reviews (appointment_id, customer_id, barber_id, rating, comment, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                appointment_id,
+                int(customer["id"]),
+                int(appointment["barber_id"]),
+                rating,
+                comment,
+                datetime.now().strftime("%d/%m/%Y, %H:%M"),
+            ),
+        )
+    return {"ok": True}
 
 
 def delete_customer_session(token):
@@ -1170,7 +1287,11 @@ class AppHandler(BaseHTTPRequestHandler):
             return self.send_json(HTTPStatus.OK, {"slots": get_availability(barber_id, date_text, service_ids)})
         if parsed.path == "/api/client/session":
             customer = enrich_customer_with_plan(self.get_current_customer())
-            return self.send_json(HTTPStatus.OK, {"logged": bool(customer), "customer": customer})
+            return self.send_json(HTTPStatus.OK, {
+                "logged": bool(customer),
+                "customer": customer,
+                "reviewableAppointments": customer.get("reviewable_appointments", []) if customer else [],
+            })
         if parsed.path == "/api/admin/session":
             return self.send_json(HTTPStatus.OK, {"logged": self.is_authenticated()})
         if parsed.path == "/api/admin/data":
@@ -1193,6 +1314,8 @@ class AppHandler(BaseHTTPRequestHandler):
             return self.handle_client_login()
         if parsed.path == "/api/client/logout":
             return self.handle_client_logout()
+        if parsed.path == "/api/client/review":
+            return self.handle_client_review()
         if parsed.path == "/api/admin/login":
             return self.handle_login()
         if parsed.path == "/api/admin/logout":
@@ -1253,7 +1376,14 @@ class AppHandler(BaseHTTPRequestHandler):
         except ValueError as exc:
             return self.send_error_json(HTTPStatus.BAD_REQUEST, str(exc))
         customer = enrich_customer_with_plan(customer)
-        body = json.dumps({"logged": True, "customer": customer}, ensure_ascii=False).encode("utf-8")
+        body = json.dumps(
+            {
+                "logged": True,
+                "customer": customer,
+                "reviewableAppointments": customer.get("reviewable_appointments", []),
+            },
+            ensure_ascii=False,
+        ).encode("utf-8")
         self.send_response(HTTPStatus.CREATED)
         self.send_client_cookie(token, expires_at)
         self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -1270,7 +1400,14 @@ class AppHandler(BaseHTTPRequestHandler):
             return self.send_error_json(HTTPStatus.UNAUTHORIZED, "E-mail, telefone, CPF ou senha invalidos.")
         customer = enrich_customer_with_plan(customer)
         token, expires_at = create_customer_session(customer["id"])
-        body = json.dumps({"logged": True, "customer": customer}, ensure_ascii=False).encode("utf-8")
+        body = json.dumps(
+            {
+                "logged": True,
+                "customer": customer,
+                "reviewableAppointments": customer.get("reviewable_appointments", []),
+            },
+            ensure_ascii=False,
+        ).encode("utf-8")
         self.send_response(HTTPStatus.OK)
         self.send_client_cookie(token, expires_at)
         self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -1287,6 +1424,21 @@ class AppHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def handle_client_review(self):
+        payload = self.read_json_body()
+        if payload is None:
+            return
+        try:
+            create_barber_review(payload, self.get_current_customer())
+        except ValueError as exc:
+            return self.send_error_json(HTTPStatus.BAD_REQUEST, str(exc))
+        customer = enrich_customer_with_plan(self.get_current_customer())
+        return self.send_json(HTTPStatus.OK, {
+            "logged": bool(customer),
+            "customer": customer,
+            "reviewableAppointments": customer.get("reviewable_appointments", []) if customer else [],
+        })
 
     def handle_login(self):
         payload = self.read_json_body()
