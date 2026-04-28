@@ -51,6 +51,7 @@ HOST = os.environ.get("HOST", "127.0.0.1")
 PORT = int(os.environ.get("PORT", "8000"))
 REMINDER_LOOKAHEAD_MINUTES = 60
 REMINDER_POLL_SECONDS = 60
+PLAN_MAX_HAIRCUTS = 4
 SESSION_COOKIE = "barbearia_vinte_session"
 CLIENT_SESSION_COOKIE = "barbearia_vinte_client_session"
 SESSION_DURATION = timedelta(hours=12)
@@ -423,7 +424,7 @@ def read_plans(conn):
         ORDER BY p.active DESC, p.end_date DESC, p.id DESC
         """
     ).fetchall()
-    return [dict(row) for row in rows]
+    return [enrich_plan_usage(conn, row) for row in rows]
 
 
 def read_customers(conn):
@@ -461,7 +462,14 @@ def read_customers(conn):
             customer["days_since_last_haircut"] = (today - datetime.strptime(customer["last_haircut_date"], "%Y-%m-%d").date()).days
         else:
             customer["days_since_last_haircut"] = None
-        customer["active_plan"] = dict(next_active_plan) if next_active_plan else None
+        customer["active_plan"] = enrich_plan_usage(conn, {
+            "id": next_active_plan["id"],
+            "customer_id": customer["id"],
+            "start_date": next_active_plan["start_date"],
+            "end_date": next_active_plan["end_date"],
+            "note": next_active_plan["note"],
+            "active": next_active_plan["active"],
+        }) if next_active_plan else None
         customers.append(customer)
     return customers
 
@@ -496,6 +504,33 @@ def deactivate_expired_plans(conn):
         "UPDATE monthly_plans SET active = 0 WHERE active = 1 AND end_date < ?",
         (today,),
     )
+
+
+def count_plan_haircuts_used(conn, customer_id, start_date, end_date):
+    row = conn.execute(
+        """
+        SELECT COUNT(*)
+        FROM appointments
+        WHERE customer_id = ?
+          AND plan_booking = 1
+          AND status IN ('confirmed', 'done')
+          AND date >= ?
+          AND date <= ?
+        """,
+        (customer_id, start_date, end_date),
+    ).fetchone()
+    return int(row[0] if row else 0)
+
+
+def enrich_plan_usage(conn, plan_row):
+    if not plan_row:
+        return None
+    plan = dict(plan_row)
+    used = count_plan_haircuts_used(conn, plan["customer_id"], plan["start_date"], plan["end_date"])
+    plan["haircuts_used"] = used
+    plan["haircuts_remaining"] = max(0, PLAN_MAX_HAIRCUTS - used)
+    plan["haircuts_limit"] = PLAN_MAX_HAIRCUTS
+    return plan
 
 
 def time_to_minutes(time_text):
@@ -693,7 +728,15 @@ def enrich_customer_with_plan(customer):
             (customer["id"],),
         ).fetchone()
     customer = dict(customer)
-    customer["active_plan"] = dict(plan) if plan else None
+    with db_connection() as conn:
+        customer["active_plan"] = enrich_plan_usage(conn, {
+            "id": plan["id"],
+            "customer_id": customer["id"],
+            "start_date": plan["start_date"],
+            "end_date": plan["end_date"],
+            "note": plan["note"],
+            "active": plan["active"],
+        }) if plan else None
     return customer
 
 
@@ -705,7 +748,7 @@ def delete_customer_session(token):
 
 def get_active_plan_for_customer(conn, customer_id, target_date):
     deactivate_expired_plans(conn)
-    return conn.execute(
+    row = conn.execute(
         """
         SELECT id, customer_id, start_date, end_date, note, active, created_at
         FROM monthly_plans
@@ -715,6 +758,7 @@ def get_active_plan_for_customer(conn, customer_id, target_date):
         """,
         (customer_id, target_date, target_date),
     ).fetchone()
+    return enrich_plan_usage(conn, row)
 
 
 def save_monthly_plan(payload):
@@ -884,6 +928,8 @@ def create_appointment(payload, customer=None):
             active_plan = get_active_plan_for_customer(conn, customer_id, date_text)
             if not active_plan:
                 raise ValueError("Seu plano mensal nao esta ativo para essa data.")
+            if int(active_plan["haircuts_used"]) >= PLAN_MAX_HAIRCUTS:
+                raise ValueError("Esse plano ja usou os 4 cortes disponiveis.")
         try:
             cursor = conn.execute(
                 """
