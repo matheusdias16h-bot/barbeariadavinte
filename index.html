@@ -1153,7 +1153,7 @@
             <p class="mini">${plan ? `Plano ativo de ${escapeHtml(formatDateBr(plan.start_date))} ate ${escapeHtml(formatDateBr(plan.end_date))}.` : "Sem plano ativo."}</p>
             ${plan ? `<p class="mini">Cortes usados: ${escapeHtml(plan.haircuts_used)} de ${escapeHtml(plan.haircuts_limit)} · Restam ${escapeHtml(plan.haircuts_remaining)}</p>` : ""}
             <div class="row-actions">
-              <a class="btn ghost" href="${escapeHtml('https://wa.me/55' + customer.phone.replace(/\\D/g, '').replace(/^55/, '') + '?text=' + encodeURIComponent(`Ola, ${customer.name}! Sentimos sua falta na Barbearia da Vinte.`))}" target="_blank" rel="noreferrer">WhatsApp</a>
+              <a class="btn ghost" href="${escapeHtml('https://wa.me/55' + customer.phone.replace(/\\D/g, '').replace(/^55/, '') + '?text=' + encodeURIComponent(`Fala, ${customer.name}! Tudo na paz por aí? 👊\n\nPassando para dizer que sentimos sua falta aqui na barbearia. O café já está no ponto e a cadeira te esperando para dar aquele trato no visual.\n\nComo está a agenda para essa semana? Se quiser, é só me falar o melhor horário que eu reservo para você! ✂️`))}" target="_blank" rel="noreferrer">WhatsApp</a>
             </div>
           </div>
         `;
