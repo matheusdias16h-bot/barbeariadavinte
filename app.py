@@ -56,6 +56,7 @@ SESSION_COOKIE = "barbearia_vinte_session"
 CLIENT_SESSION_COOKIE = "barbearia_vinte_client_session"
 SESSION_DURATION = timedelta(hours=12)
 CLIENT_SESSION_DURATION = timedelta(days=30)
+PASSWORD_RESET_DURATION = timedelta(hours=1)
 ADMIN_USER = os.environ.get("ADMIN_USER", "admin")
 ADMIN_PASS_HASH = hashlib.sha256(os.environ.get("ADMIN_PASS", "1234").encode("utf-8")).hexdigest()
 
@@ -234,6 +235,18 @@ def init_db():
                 customer_id INTEGER NOT NULL,
                 created_at TEXT NOT NULL,
                 expires_at TEXT NOT NULL,
+                FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS password_reset_tokens (
+                token TEXT PRIMARY KEY,
+                customer_id INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                used_at TEXT NOT NULL DEFAULT '',
                 FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
             )
             """
@@ -863,6 +876,78 @@ def delete_customer_session(token):
             conn.execute("DELETE FROM customer_sessions WHERE token = ?", (token,))
 
 
+def cleanup_password_reset_tokens(conn):
+    conn.execute(
+        "DELETE FROM password_reset_tokens WHERE expires_at <= ? OR TRIM(COALESCE(used_at, '')) <> ''",
+        (utc_now().isoformat(),),
+    )
+
+
+def create_password_reset_token(identifier, base_url):
+    identifier_text = str(identifier or "").strip().lower()
+    if not identifier_text:
+        raise ValueError("Informe o e-mail cadastrado para recuperar a senha.")
+    with db_connection() as conn:
+        cleanup_password_reset_tokens(conn)
+        customer = conn.execute(
+            "SELECT id, name, email FROM customers WHERE lower(email) = ? LIMIT 1",
+            (identifier_text,),
+        ).fetchone()
+        if not customer:
+            raise ValueError("Nao encontrei cliente com esse e-mail.")
+        token = secrets.token_urlsafe(32)
+        now = utc_now()
+        expires_at = now + PASSWORD_RESET_DURATION
+        conn.execute(
+            """
+            INSERT INTO password_reset_tokens (token, customer_id, created_at, expires_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (token, int(customer["id"]), now.isoformat(), expires_at.isoformat()),
+        )
+        link = f"{base_url}/?resetToken={token}"
+        subject = "Recuperacao de senha - Barbearia da Vinte"
+        body = (
+            f"Ola, {customer['name']}!\n\n"
+            f"Recebemos um pedido para redefinir sua senha.\n\n"
+            f"Use este link para criar uma nova senha:\n{link}\n\n"
+            f"Esse link expira em 1 hora.\n"
+            f"Se voce nao pediu essa troca, pode ignorar este e-mail."
+        )
+        send_and_log_email(conn, None, customer["email"], subject, body)
+
+
+def reset_customer_password(token, new_password):
+    token_text = str(token or "").strip()
+    password_text = str(new_password or "").strip()
+    if not token_text or not password_text:
+        raise ValueError("Informe o link de recuperacao e a nova senha.")
+    if len(password_text) < 4:
+        raise ValueError("A nova senha precisa ter pelo menos 4 caracteres.")
+    with db_connection() as conn:
+        cleanup_password_reset_tokens(conn)
+        row = conn.execute(
+            """
+            SELECT token, customer_id, expires_at, used_at
+            FROM password_reset_tokens
+            WHERE token = ?
+            LIMIT 1
+            """,
+            (token_text,),
+        ).fetchone()
+        if not row:
+            raise ValueError("Esse link de recuperacao e invalido ou expirou.")
+        conn.execute(
+            "UPDATE customers SET password_hash = ? WHERE id = ?",
+            (password_hash(password_text), int(row["customer_id"])),
+        )
+        conn.execute(
+            "UPDATE password_reset_tokens SET used_at = ? WHERE token = ?",
+            (utc_now().isoformat(), token_text),
+        )
+        conn.execute("DELETE FROM customer_sessions WHERE customer_id = ?", (int(row["customer_id"]),))
+
+
 def get_active_plan_for_customer(conn, customer_id, target_date):
     deactivate_expired_plans(conn)
     row = conn.execute(
@@ -1312,6 +1397,10 @@ class AppHandler(BaseHTTPRequestHandler):
             return self.handle_client_register()
         if parsed.path == "/api/client/login":
             return self.handle_client_login()
+        if parsed.path == "/api/client/forgot-password":
+            return self.handle_client_forgot_password()
+        if parsed.path == "/api/client/reset-password":
+            return self.handle_client_reset_password()
         if parsed.path == "/api/client/logout":
             return self.handle_client_logout()
         if parsed.path == "/api/client/review":
@@ -1414,6 +1503,26 @@ class AppHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def handle_client_forgot_password(self):
+        payload = self.read_json_body()
+        if payload is None:
+            return
+        try:
+            create_password_reset_token(payload.get("email"), self.get_base_url())
+        except ValueError as exc:
+            return self.send_error_json(HTTPStatus.BAD_REQUEST, str(exc))
+        return self.send_json(HTTPStatus.OK, {"ok": True, "message": "Enviamos o link de recuperacao para o e-mail informado."})
+
+    def handle_client_reset_password(self):
+        payload = self.read_json_body()
+        if payload is None:
+            return
+        try:
+            reset_customer_password(payload.get("token"), payload.get("password"))
+        except ValueError as exc:
+            return self.send_error_json(HTTPStatus.BAD_REQUEST, str(exc))
+        return self.send_json(HTTPStatus.OK, {"ok": True, "message": "Senha redefinida com sucesso. Agora e so entrar na conta."})
 
     def handle_client_logout(self):
         delete_customer_session(self.get_client_session_token())
@@ -1535,6 +1644,11 @@ class AppHandler(BaseHTTPRequestHandler):
             return True
         self.send_error_json(HTTPStatus.UNAUTHORIZED, "Sessao expirada ou nao autenticada.")
         return False
+
+    def get_base_url(self):
+        proto = self.headers.get("X-Forwarded-Proto", "http")
+        host = self.headers.get("X-Forwarded-Host") or self.headers.get("Host") or f"{HOST}:{PORT}"
+        return f"{proto}://{host}"
 
     def send_cookie(self, token, expires_at):
         expires_http = expires_at.astimezone(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT")

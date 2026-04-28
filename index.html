@@ -515,7 +515,17 @@
             <div id="client-login-form" class="field-grid">
                 <div class="field"><label for="client-login-email">E-mail, telefone ou CPF</label><input id="client-login-email" name="identifier" type="text" placeholder="voce@email.com ou 31999999999" /></div>
               <div class="field"><label for="client-login-password">Senha</label><input id="client-login-password" name="password" type="password" placeholder="Sua senha" /></div>
-              <div class="field full"><button class="btn secondary" id="client-login-submit" type="button">Entrar na conta</button></div>
+              <div class="field full">
+                <div class="row-actions">
+                  <button class="btn secondary" id="client-login-submit" type="button">Entrar na conta</button>
+                  <button class="btn ghost" id="client-forgot-password" type="button">Esqueci minha senha</button>
+                </div>
+              </div>
+            </div>
+            <div id="client-reset-form" class="field-grid" hidden>
+              <div class="field full"><label for="reset-password-new">Nova senha</label><input id="reset-password-new" name="resetPasswordNew" type="password" placeholder="Digite sua nova senha" /></div>
+              <div class="field full"><label for="reset-password-confirm">Confirmar senha</label><input id="reset-password-confirm" name="resetPasswordConfirm" type="password" placeholder="Repita sua nova senha" /></div>
+              <div class="field full"><button class="btn secondary" id="client-reset-submit" type="button">Salvar nova senha</button></div>
             </div>
             <div id="client-register-form" class="field-grid" hidden>
               <div class="field"><label for="register-name">Nome</label><input id="register-name" name="name" placeholder="Seu nome completo" /></div>
@@ -776,6 +786,7 @@
         date: "",
       },
     };
+    const resetToken = new URLSearchParams(location.search).get("resetToken") || "";
     const weekdays = ["Segunda", "Terca", "Quarta", "Quinta", "Sexta", "Sabado", "Domingo"];
     const baseTimes = ["09:00","10:00","11:00","13:00","14:00","15:00","16:00","17:00","18:00","19:00","20:00"];
 
@@ -842,6 +853,7 @@
       document.querySelectorAll("[data-client-tab]").forEach((button) => button.classList.toggle("active", button.dataset.clientTab === tab));
       $("client-login-form").hidden = tab !== "login";
       $("client-register-form").hidden = tab !== "register";
+      $("client-reset-form").hidden = tab !== "reset";
     }
 
     function renderClientSession() {
@@ -1349,6 +1361,19 @@
     document.querySelectorAll("[data-client-tab]").forEach((button) => {
       button.addEventListener("click", () => setClientTab(button.dataset.clientTab));
     });
+    $("client-forgot-password").addEventListener("click", async () => {
+      const email = prompt("Digite o e-mail cadastrado para recuperar a senha:");
+      if (!email) return;
+      try {
+        const response = await fetchJson("/api/client/forgot-password", {
+          method: "POST",
+          body: JSON.stringify({ email }),
+        });
+        setMessage($("client-auth-message"), response.message || "Link de recuperacao enviado.", "ok");
+      } catch (error) {
+        setMessage($("client-auth-message"), error.message, "err");
+      }
+    });
       $("client-login-submit").addEventListener("click", async () => {
         try {
           const payload = {
@@ -1360,6 +1385,31 @@
         state.customer = response.customer || null;
         renderClientSession();
         setMessage($("client-auth-message"), "Conta conectada.", "ok");
+      } catch (error) {
+        setMessage($("client-auth-message"), error.message, "err");
+      }
+    });
+    $("client-reset-submit").addEventListener("click", async () => {
+      const password = $("reset-password-new").value;
+      const confirm = $("reset-password-confirm").value;
+      if (!resetToken) {
+        setMessage($("client-auth-message"), "Link de recuperacao invalido.", "err");
+        return;
+      }
+      if (!password || password !== confirm) {
+        setMessage($("client-auth-message"), "Confirme a nova senha corretamente.", "err");
+        return;
+      }
+      try {
+        const response = await fetchJson("/api/client/reset-password", {
+          method: "POST",
+          body: JSON.stringify({ token: resetToken, password }),
+        });
+        $("reset-password-new").value = "";
+        $("reset-password-confirm").value = "";
+        history.replaceState({}, "", location.pathname + "#agendamento");
+        setClientTab("login");
+        setMessage($("client-auth-message"), response.message || "Senha redefinida com sucesso.", "ok");
       } catch (error) {
         setMessage($("client-auth-message"), error.message, "err");
       }
@@ -1654,6 +1704,7 @@
     };
 
     setDefaultDate();
+    if (resetToken) setClientTab("reset");
     checkClientSession().catch(() => {});
     loadPublicData().catch((error) => setMessage($("booking-message"), error.message, "err"));
     if (location.pathname === "/admin") openAdmin();
