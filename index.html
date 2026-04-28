@@ -167,6 +167,8 @@
     }
     .quick-item { min-height: 98px; display: grid; grid-template-columns: 54px 1fr; gap: 15px; align-items: center; padding: 22px; border-right: 1px dashed rgba(255,255,255,0.13); }
     .quick-item:last-child { border-right: 0; }
+    .quick-cta { display: flex; align-items: center; justify-content: center; grid-template-columns: none; gap: 0; min-width: 0; }
+    .quick-cta .btn { width: 100%; max-width: 220px; padding-inline: 18px; white-space: nowrap; text-align: center; }
     .quick-item .ico { font-size: 2rem; color: #eee; }
     .quick-item strong { display: block; text-transform: uppercase; font-size: 0.82rem; }
     .quick-item span { display: block; color: var(--muted); margin-top: 5px; line-height: 1.45; font-size: 0.9rem; }
@@ -408,6 +410,7 @@
       .hero { padding-bottom: 18px; }
       .quick, .services, .barbers, .proof, .field-grid, .admin-grid { grid-template-columns: 1fr; }
       .quick-item { border-right: 0; border-bottom: 1px dashed rgba(255,255,255,0.12); }
+      .quick-cta .btn { max-width: none; }
       .section-head { align-items: start; flex-direction: column; }
       .slot-grid { grid-template-columns: repeat(3, 1fr); }
       .service-choice-grid { grid-template-columns: 1fr; }
@@ -454,7 +457,7 @@
           <div class="quick-item"><span class="ico">▦</span><p><strong>Escolha o servico</strong><span>Veja valores e duracao.</span></p></div>
           <div class="quick-item"><span class="ico">♙</span><p><strong>Escolha o barbeiro</strong><span>Marque com seu profissional.</span></p></div>
           <div class="quick-item"><span class="ico">◴</span><p><strong>Escolha o horario</strong><span>Horarios ocupados somem.</span></p></div>
-          <div class="quick-item"><a class="btn" href="#agendamento">Agendar agora</a></div>
+          <div class="quick-item quick-cta"><a class="btn" href="#agendamento">Agendar agora</a></div>
         </div>
       </div>
     </section>
