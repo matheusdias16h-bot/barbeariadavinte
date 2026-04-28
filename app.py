@@ -383,7 +383,7 @@ def read_public_data(include_admin=False):
                 "SELECT id, name, specialty, email, photo, active FROM barbers WHERE active = 1 ORDER BY id"
             ).fetchall()
         ]
-        payload = {"settings": settings, "services": services, "barbers": barbers}
+        payload = {"settings": settings, "services": services, "barbers": barbers, "reviews": read_barber_reviews(conn)[:8]}
         if include_admin:
             payload["services"] = [
                 dict(row)

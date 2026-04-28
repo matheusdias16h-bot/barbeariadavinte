@@ -203,6 +203,19 @@
     .barber-card { text-align: center; padding: 10px; }
     .barber-card strong { display: block; text-transform: uppercase; }
     .barber-card p { color: var(--muted); margin: 7px 0 16px; font-size: 0.92rem; }
+    .rating-line { color: var(--gold-2); font-weight: 800; margin: 10px 0 8px; font-size: 0.88rem; }
+    .review-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    .review-card {
+      background: linear-gradient(180deg, rgba(28,28,28,0.95), rgba(10,10,10,0.95));
+      border: 1px solid rgba(255,255,255,0.09);
+      border-radius: 5px;
+      padding: 22px;
+      min-height: 180px;
+    }
+    .review-stars { color: var(--gold-2); font-size: 1.05rem; letter-spacing: 0.08em; }
+    .review-card strong { display: block; margin-top: 12px; text-transform: uppercase; }
+    .review-card p { color: var(--muted); line-height: 1.65; margin-top: 8px; font-size: 0.92rem; }
+    .review-meta { color: #d7d0c5; font-size: 0.84rem; margin-top: 14px; }
     .booking-band { background: linear-gradient(180deg, #0b0b0b, #000); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
     .booking-shell {
       display: grid;
@@ -463,6 +476,16 @@
           <p>Cada barbeiro pode ter seu proprio e-mail e sua propria agenda dentro do painel admin.</p>
         </div>
         <div class="barbers" id="barber-list"></div>
+      </div>
+    </section>
+
+    <section id="avaliacoes-publicas">
+      <div class="container">
+        <div class="section-head">
+          <h2>O que os clientes falam</h2>
+          <p>Aqui aparecem as avaliacoes reais enviadas pelos clientes depois do atendimento concluido.</p>
+        </div>
+        <div class="review-grid" id="public-review-list"></div>
       </div>
     </section>
 
@@ -1557,6 +1580,74 @@
         state.customer = null;
       }
       renderClientSession();
+    };
+
+    renderPublic = function () {
+      $("hero-tagline").textContent = state.settings.tagline || "Seu estilo. Sua identidade.";
+      $("hero-about").textContent = state.settings.about || "";
+      $("info-hours").textContent = state.settings.hours || "";
+      $("info-address").textContent = state.settings.address || "";
+      $("info-phone").textContent = state.settings.phone || "";
+      $("info-instagram").textContent = state.settings.instagram || "";
+      $("footer-name").textContent = state.settings.name || "Barbearia da Vinte";
+      $("floating-whatsapp").href = whatsappUrl();
+      $("whatsapp-link").href = whatsappUrl("Ola! Quero marcar um horario na Barbearia da Vinte.");
+
+      $("service-list").innerHTML = state.services.map((service) => `
+        <article class="service-card">
+          <strong>${escapeHtml(service.name)}</strong>
+          <p>${escapeHtml(service.description || "Servico da barbearia.")}</p>
+          <div class="price">${money(service.price)} Â· ${escapeHtml(service.duration)} min</div>
+        </article>
+      `).join("");
+
+      $("barber-list").innerHTML = state.barbers.map((barber, index) => `
+        <article class="barber-card">
+          <div class="barber-photo">${barber.photo ? `<img src="${escapeHtml(barber.photo)}" alt="${escapeHtml(barber.name)}" />` : `<span>${["â™™","â™˜","â™—","â™”"][index % 4]}</span>`}</div>
+          <strong>${escapeHtml(barber.name)}</strong>
+          <p>${escapeHtml(barber.specialty || "Barbeiro")}</p>
+          <div class="rating-line">${"★".repeat(Math.max(0, Math.round(Number(barber.review_avg || 0))))}${"☆".repeat(Math.max(0, 5 - Math.round(Number(barber.review_avg || 0))))} ${Number(barber.review_count || 0) ? `${escapeHtml((Number(barber.review_avg || 0)).toFixed(1))} (${escapeHtml(barber.review_count)} avaliacoes)` : "Sem avaliacoes ainda"}</div>
+          <a class="btn secondary" href="#agendamento" data-pick-barber="${barber.id}">Agendar</a>
+        </article>
+      `).join("");
+
+      $("public-review-list").innerHTML = (state.reviews || []).length ? state.reviews.slice(0, 6).map((review) => `
+        <article class="review-card">
+          <div class="review-stars">${"★".repeat(Number(review.rating || 0))}${"☆".repeat(Math.max(0, 5 - Number(review.rating || 0)))}</div>
+          <strong>${escapeHtml(review.barber_name)}</strong>
+          <p>${escapeHtml(review.comment || "Atendimento muito bom.")}</p>
+          <div class="review-meta">${escapeHtml(review.customer_name)} Â· ${escapeHtml(formatDateBr(review.date))}</div>
+        </article>
+      `).join("") : '<p class="mini">As primeiras avaliacoes vao aparecer aqui assim que os clientes concluirem o atendimento.</p>';
+
+      $("service-choice-list").innerHTML = state.services.map((service, index) => {
+        const disabledForPlan = isMonthlyPlanService(service) && !customerCanUsePlan();
+        return `
+        <label class="service-choice" style="${disabledForPlan ? 'opacity:.45;cursor:not-allowed;' : ''}">
+          <input type="checkbox" name="serviceIds" value="${service.id}" ${index === 0 && !disabledForPlan ? "checked" : ""} ${disabledForPlan ? "disabled" : ""} />
+          <span>
+            <strong>${escapeHtml(service.name)}</strong>
+            <span>${money(service.price)} Â· ${escapeHtml(service.duration)} min${disabledForPlan ? ' Â· plano inativo ou sem saldo' : ''}</span>
+          </span>
+        </label>
+      `;
+      }).join("");
+      $("barber-select").innerHTML = state.barbers.map((barber) => `<option value="${barber.id}">${escapeHtml(barber.name)}</option>`).join("");
+      document.querySelectorAll('input[name="serviceIds"]').forEach((input) => {
+        input.addEventListener("change", () => {
+          updateBookingSummary();
+          loadAvailability();
+        });
+      });
+      document.querySelectorAll("[data-pick-barber]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          $("barber-select").value = btn.dataset.pickBarber;
+          loadAvailability();
+        });
+      });
+      renderClientSession();
+      updateBookingSummary();
+      loadAvailability();
     };
 
     setDefaultDate();
