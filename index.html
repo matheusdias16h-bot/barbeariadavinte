@@ -603,6 +603,16 @@
         <div id="tab-agenda" class="tab-panel">
           <div class="admin-card">
             <div class="stats-grid" id="overview-stats"></div>
+            <div class="field-grid" style="margin-bottom:16px;">
+              <div class="field">
+                <label for="agenda-filter-barber">Filtrar barbeiro</label>
+                <select id="agenda-filter-barber"></select>
+              </div>
+              <div class="field">
+                <label for="agenda-filter-date">Filtrar data</label>
+                <input id="agenda-filter-date" type="date" />
+              </div>
+            </div>
             <h3>Agendamentos</h3>
             <div class="list" id="appointment-list"></div>
           </div>
@@ -686,6 +696,10 @@
       selectedTime: "",
       adminLogged: false,
       activeTab: "agenda",
+      appointmentFilters: {
+        barber: "",
+        date: "",
+      },
     };
     const weekdays = ["Segunda", "Terca", "Quarta", "Quinta", "Sexta", "Sabado", "Domingo"];
     const baseTimes = ["09:00","10:00","11:00","13:00","14:00","15:00","16:00","17:00","18:00","19:00","20:00"];
@@ -977,12 +991,26 @@
       updateAdminView();
     }
 
+    function appointmentStartsAt(item) {
+      return new Date(`${item.date}T${item.time}:00`);
+    }
+
+    function getActiveAgendaAppointments() {
+      const now = new Date();
+      return state.appointments.filter((item) => {
+        if (item.status !== "confirmed") return false;
+        const startsAt = appointmentStartsAt(item);
+        if (Number.isNaN(startsAt.getTime())) return false;
+        return startsAt >= now;
+      });
+    }
+
     function renderOverviewStats() {
       const today = new Date().toISOString().slice(0, 10);
-      const todayCount = state.appointments.filter((item) => item.date === today && item.status === "confirmed").length;
-      const confirmedCount = state.appointments.filter((item) => item.status === "confirmed").length;
-      const totalRevenue = state.appointments
-        .filter((item) => item.status !== "canceled")
+      const activeAppointments = getActiveAgendaAppointments();
+      const todayCount = activeAppointments.filter((item) => item.date === today).length;
+      const confirmedCount = activeAppointments.length;
+      const totalRevenue = activeAppointments
         .reduce((sum, item) => sum + Number(item.service_price || 0), 0);
       const stats = [
         { label: "Hoje", value: todayCount, note: "agendamentos confirmados" },
@@ -1000,7 +1028,21 @@
     }
 
     function renderAppointments() {
-      $("appointment-list").innerHTML = state.appointments.length ? state.appointments.map((item) => `
+      const barberFilter = $("agenda-filter-barber");
+      const dateFilter = $("agenda-filter-date");
+      if (barberFilter) {
+        barberFilter.innerHTML = [`<option value="">Todos os barbeiros</option>`].concat(
+          state.barbers.map((barber) => `<option value="${escapeHtml(barber.name)}">${escapeHtml(barber.name)}</option>`)
+        ).join("");
+        barberFilter.value = state.appointmentFilters.barber;
+      }
+      if (dateFilter) {
+        dateFilter.value = state.appointmentFilters.date;
+      }
+      const appointments = getActiveAgendaAppointments()
+        .filter((item) => !state.appointmentFilters.barber || item.barber_name === state.appointmentFilters.barber)
+        .filter((item) => !state.appointmentFilters.date || item.date === state.appointmentFilters.date);
+      $("appointment-list").innerHTML = appointments.length ? appointments.map((item) => `
         <div class="appointment">
           <strong>${escapeHtml(item.date)} as ${escapeHtml(item.time)} · ${escapeHtml(item.client_name)}</strong>
           <p class="mini">${escapeHtml(item.service_name)} com ${escapeHtml(item.barber_name)} · ${money(item.service_price)}</p>
@@ -1012,13 +1054,27 @@
             <button class="btn secondary" data-status="canceled" data-id="${item.id}" type="button">Cancelar</button>
           </div>
         </div>
-      `).join("") : '<p class="mini">Nenhum agendamento ainda.</p>';
+      `).join("") : '<p class="mini">Nenhum agendamento ativo para esse filtro.</p>';
       document.querySelectorAll("[data-status]").forEach((button) => {
         button.addEventListener("click", async () => {
           await fetchJson("/api/admin/appointment-status", { method: "POST", body: JSON.stringify({ id: Number(button.dataset.id), status: button.dataset.status }) });
           await refreshAdmin();
         });
       });
+      if (barberFilter && !barberFilter.dataset.bound) {
+        barberFilter.dataset.bound = "true";
+        barberFilter.addEventListener("change", () => {
+          state.appointmentFilters.barber = barberFilter.value;
+          renderAppointments();
+        });
+      }
+      if (dateFilter && !dateFilter.dataset.bound) {
+        dateFilter.dataset.bound = "true";
+        dateFilter.addEventListener("change", () => {
+          state.appointmentFilters.date = dateFilter.value;
+          renderAppointments();
+        });
+      }
     }
 
     function renderCustomers() {
