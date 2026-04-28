@@ -746,6 +746,16 @@
       return input && input.checked;
     });
 
+    function customerCanUsePlan() {
+      const plan = state.customer?.active_plan;
+      return Boolean(plan && Number(plan.haircuts_remaining || 0) > 0);
+    }
+
+    function isMonthlyPlanService(service) {
+      const name = String(service?.name || "").toLowerCase();
+      return name.includes("ja tenho mensal") || name.includes("já tenho mensal");
+    }
+
     async function fetchJson(url, options = {}) {
       const response = await fetch(url, {
         credentials: "same-origin",
@@ -822,6 +832,7 @@
           state.customerLogged = false;
           state.customer = null;
           renderClientSession();
+          renderPublic();
           setMessage($("client-auth-message"), "Conta desconectada.", "ok");
         });
       }
@@ -867,15 +878,18 @@
         </article>
       `).join("");
 
-      $("service-choice-list").innerHTML = state.services.map((service, index) => `
-        <label class="service-choice">
-          <input type="checkbox" name="serviceIds" value="${service.id}" ${index === 0 ? "checked" : ""} />
+      $("service-choice-list").innerHTML = state.services.map((service, index) => {
+        const disabledForPlan = isMonthlyPlanService(service) && !customerCanUsePlan();
+        return `
+        <label class="service-choice" style="${disabledForPlan ? 'opacity:.45;cursor:not-allowed;' : ''}">
+          <input type="checkbox" name="serviceIds" value="${service.id}" ${index === 0 && !disabledForPlan ? "checked" : ""} ${disabledForPlan ? "disabled" : ""} />
           <span>
             <strong>${escapeHtml(service.name)}</strong>
-            <span>${money(service.price)} · ${escapeHtml(service.duration)} min</span>
+            <span>${money(service.price)} · ${escapeHtml(service.duration)} min${disabledForPlan ? ' · plano inativo ou sem saldo' : ''}</span>
           </span>
         </label>
-      `).join("");
+      `;
+      }).join("");
       $("barber-select").innerHTML = state.barbers.map((barber) => `<option value="${barber.id}">${escapeHtml(barber.name)}</option>`).join("");
       document.querySelectorAll('input[name="serviceIds"]').forEach((input) => {
         input.addEventListener("change", () => {
