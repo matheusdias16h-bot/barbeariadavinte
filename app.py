@@ -8,6 +8,7 @@ import sqlite3
 import tempfile
 import threading
 import time
+from calendar import monthrange
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from http import HTTPStatus
@@ -412,6 +413,7 @@ def read_appointments(conn):
 
 
 def read_plans(conn):
+    deactivate_expired_plans(conn)
     rows = conn.execute(
         """
         SELECT p.id, p.customer_id, p.start_date, p.end_date, p.note, p.active, p.created_at,
@@ -425,6 +427,7 @@ def read_plans(conn):
 
 
 def read_customers(conn):
+    deactivate_expired_plans(conn)
     customers = []
     rows = conn.execute(
         "SELECT id, name, email, phone, cpf, created_at FROM customers ORDER BY name COLLATE NOCASE"
@@ -477,6 +480,22 @@ def digits_only(value):
 
 def parse_appointment_datetime(date_text, time_text):
     return datetime.strptime(f"{date_text} {time_text}", "%Y-%m-%d %H:%M")
+
+
+def add_one_month(date_text):
+    base = datetime.strptime(date_text, "%Y-%m-%d").date()
+    year = base.year + (1 if base.month == 12 else 0)
+    month = 1 if base.month == 12 else base.month + 1
+    day = min(base.day, monthrange(year, month)[1])
+    return base.replace(year=year, month=month, day=day).isoformat()
+
+
+def deactivate_expired_plans(conn):
+    today = datetime.now().date().isoformat()
+    conn.execute(
+        "UPDATE monthly_plans SET active = 0 WHERE active = 1 AND end_date < ?",
+        (today,),
+    )
 
 
 def time_to_minutes(time_text):
@@ -662,6 +681,7 @@ def enrich_customer_with_plan(customer):
     if not customer:
         return None
     with db_connection() as conn:
+        deactivate_expired_plans(conn)
         plan = conn.execute(
             """
             SELECT id, start_date, end_date, note, active
@@ -684,6 +704,7 @@ def delete_customer_session(token):
 
 
 def get_active_plan_for_customer(conn, customer_id, target_date):
+    deactivate_expired_plans(conn)
     return conn.execute(
         """
         SELECT id, customer_id, start_date, end_date, note, active, created_at
@@ -700,10 +721,13 @@ def save_monthly_plan(payload):
     customer_id = int(payload.get("customerId") or 0)
     start_date = str(payload.get("startDate", "")).strip()
     end_date = str(payload.get("endDate", "")).strip()
+    if start_date and not end_date:
+        end_date = add_one_month(start_date)
     note = str(payload.get("note", "")).strip()
     if not customer_id or not start_date or not end_date:
         raise ValueError("Escolha o cliente e as datas do plano.")
     with db_connection() as conn:
+        deactivate_expired_plans(conn)
         conn.execute("UPDATE monthly_plans SET active = 0 WHERE customer_id = ? AND active = 1", (customer_id,))
         conn.execute(
             """
