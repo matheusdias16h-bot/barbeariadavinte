@@ -6,6 +6,8 @@ import shutil
 import smtplib
 import sqlite3
 import tempfile
+import threading
+import time
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from http import HTTPStatus
@@ -46,6 +48,8 @@ INDEX_PATH = BASE_DIR / "index.html"
 STATIC_DIR = BASE_DIR / "static"
 HOST = os.environ.get("HOST", "127.0.0.1")
 PORT = int(os.environ.get("PORT", "8000"))
+REMINDER_LOOKAHEAD_MINUTES = 60
+REMINDER_POLL_SECONDS = 60
 SESSION_COOKIE = "barbearia_vinte_session"
 CLIENT_SESSION_COOKIE = "barbearia_vinte_client_session"
 SESSION_DURATION = timedelta(hours=12)
@@ -255,6 +259,7 @@ def init_db():
         )
         ensure_column(conn, "appointments", "customer_id", "INTEGER")
         ensure_column(conn, "appointments", "plan_booking", "INTEGER NOT NULL DEFAULT 0")
+        ensure_column(conn, "appointments", "reminder_sent_at", "TEXT NOT NULL DEFAULT ''")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS email_outbox (
@@ -468,6 +473,10 @@ def sanitize_customer(row):
 
 def digits_only(value):
     return "".join(ch for ch in str(value or "") if ch.isdigit())
+
+
+def parse_appointment_datetime(date_text, time_text):
+    return datetime.strptime(f"{date_text} {time_text}", "%Y-%m-%d %H:%M")
 
 
 def time_to_minutes(time_text):
@@ -883,7 +892,28 @@ def create_appointment(payload, customer=None):
         appointment_dict["service_price"] = total_price
         appointment_dict["service_duration"] = total_duration
         notify_barber(conn, appointment_dict)
+        notify_customer_confirmation(conn, appointment_dict)
         return appointment_dict
+
+
+def send_and_log_email(conn, appointment_id, recipient, subject, body, reply_to=""):
+    recipient = str(recipient or "").strip()
+    if not recipient:
+        return
+    status = "queued"
+    error = ""
+    try:
+        send_email(recipient, subject, body, reply_to=reply_to)
+        status = "sent"
+    except Exception as exc:
+        error = str(exc)[:500]
+    conn.execute(
+        """
+        INSERT INTO email_outbox (appointment_id, recipient, subject, body, status, error, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (appointment_id, recipient, subject, body, status, error, datetime.now().strftime("%d/%m/%Y, %H:%M")),
+    )
 
 
 def notify_barber(conn, appointment):
@@ -906,20 +936,26 @@ def notify_barber(conn, appointment):
         f"Barbeiro: {appointment['barber_name']}\n"
         f"Observacoes: {appointment['notes'] or 'nenhuma'}\n"
     )
-    status = "queued"
-    error = ""
-    try:
-        send_email(recipient, subject, body, reply_to=reply_to)
-        status = "sent"
-    except Exception as exc:
-        error = str(exc)[:500]
-    conn.execute(
-        """
-        INSERT INTO email_outbox (appointment_id, recipient, subject, body, status, error, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        """,
-        (appointment["id"], recipient, subject, body, status, error, datetime.now().strftime("%d/%m/%Y, %H:%M")),
+    send_and_log_email(conn, appointment["id"], recipient, subject, body, reply_to=reply_to)
+
+
+def notify_customer_confirmation(conn, appointment):
+    recipient = appointment.get("client_email", "").strip()
+    if not recipient:
+        return
+    subject = f"Seu horario na Barbearia da Vinte foi confirmado: {appointment['date']} as {appointment['time']}"
+    body = (
+        f"Ola, {appointment['client_name']}!\n\n"
+        f"Seu agendamento foi confirmado com sucesso.\n\n"
+        f"Barbeiro: {appointment['barber_name']}\n"
+        f"Servico: {appointment['service_name']}\n"
+        f"Data: {appointment['date']}\n"
+        f"Horario: {appointment['time']}\n"
+        f"Valor: R$ {appointment['service_price']:.2f}\n"
+        f"Observacoes: {appointment['notes'] or 'nenhuma'}\n\n"
+        f"Se precisar remarcar, fale com a Barbearia da Vinte."
     )
+    send_and_log_email(conn, appointment["id"], recipient, subject, body)
 
 
 def send_email(recipient, subject, body, reply_to=""):
@@ -942,6 +978,75 @@ def send_email(recipient, subject, body, reply_to=""):
         if user and password:
             smtp.login(user, password)
         smtp.send_message(message)
+
+
+def send_due_reminders():
+    now = datetime.now()
+    with db_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT a.id, a.client_name, a.client_phone, a.client_email, a.notes, a.date, a.time,
+                   COALESCE((
+                       SELECT GROUP_CONCAT(s2.name, ' + ')
+                       FROM appointment_services aps
+                       JOIN services s2 ON s2.id = aps.service_id
+                       WHERE aps.appointment_id = a.id
+                   ), s.name) AS service_name,
+                   COALESCE((
+                       SELECT SUM(s2.price)
+                       FROM appointment_services aps
+                       JOIN services s2 ON s2.id = aps.service_id
+                       WHERE aps.appointment_id = a.id
+                   ), s.price) AS service_price,
+                   b.name AS barber_name
+            FROM appointments a
+            JOIN services s ON s.id = a.service_id
+            JOIN barbers b ON b.id = a.barber_id
+            WHERE a.status = 'confirmed'
+              AND TRIM(COALESCE(a.client_email, '')) <> ''
+              AND TRIM(COALESCE(a.reminder_sent_at, '')) = ''
+            ORDER BY a.date, a.time, a.id
+            """
+        ).fetchall()
+        for row in rows:
+            appointment = dict(row)
+            try:
+                starts_at = parse_appointment_datetime(appointment["date"], appointment["time"])
+            except ValueError:
+                continue
+            delta = starts_at - now
+            seconds_until = delta.total_seconds()
+            if seconds_until <= 0 or seconds_until > (REMINDER_LOOKAHEAD_MINUTES * 60):
+                continue
+            subject = f"Lembrete: seu horario na Barbearia da Vinte e hoje as {appointment['time']}"
+            body = (
+                f"Ola, {appointment['client_name']}!\n\n"
+                f"Passando para lembrar que voce tem horario marcado daqui a 1 hora.\n\n"
+                f"Barbeiro: {appointment['barber_name']}\n"
+                f"Servico: {appointment['service_name']}\n"
+                f"Data: {appointment['date']}\n"
+                f"Horario: {appointment['time']}\n"
+                f"Valor: R$ {appointment['service_price']:.2f}\n\n"
+                f"Te esperamos na Barbearia da Vinte."
+            )
+            send_and_log_email(conn, appointment["id"], appointment["client_email"], subject, body)
+            conn.execute(
+                "UPDATE appointments SET reminder_sent_at = ? WHERE id = ?",
+                (datetime.now().strftime("%d/%m/%Y, %H:%M"), appointment["id"]),
+            )
+
+
+def reminder_worker():
+    while True:
+        try:
+            send_due_reminders()
+        except Exception as exc:
+            print(f"Reminder worker error: {exc}")
+        time.sleep(REMINDER_POLL_SECONDS)
+
+
+def start_background_workers():
+    threading.Thread(target=reminder_worker, name="appointment-reminders", daemon=True).start()
 
 
 def create_session():
@@ -1249,6 +1354,7 @@ class AppHandler(BaseHTTPRequestHandler):
 
 def run():
     init_db()
+    start_background_workers()
     server = ThreadingHTTPServer((HOST, PORT), AppHandler)
     print(f"Servidor pronto em http://{HOST}:{PORT}")
     server.serve_forever()
