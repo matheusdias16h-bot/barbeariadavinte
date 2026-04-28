@@ -6,3 +6,6 @@ barbearia_da_vinte.db
 barbearia_da_vinte.db-*
 barbearia-da-vinte-deploy*.zip
 __script_check.js
+_tmp_index_script.js
+.data/
+*.sqlite-journal

@@ -2,8 +2,10 @@
 import json
 import os
 import secrets
+import shutil
 import smtplib
 import sqlite3
+import tempfile
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from http import HTTPStatus
@@ -15,10 +17,31 @@ from urllib.parse import parse_qs, urlparse
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = Path(os.environ.get("DATA_DIR", "")).expanduser() if os.environ.get("DATA_DIR") else None
-DB_PATH = Path(os.environ.get("DB_PATH", "")).expanduser() if os.environ.get("DB_PATH") else (
-    DATA_DIR / "barbearia_da_vinte_data.sqlite" if DATA_DIR else BASE_DIR / "barbearia_da_vinte_data.sqlite"
+LEGACY_DB_PATH = BASE_DIR / "barbearia_da_vinte_data.sqlite"
+DEFAULT_DATA_DIR = (
+    Path(os.environ.get("LOCALAPPDATA", BASE_DIR)).expanduser() / "BarbeariaDaVinte"
+    if os.name == "nt"
+    else BASE_DIR / "data"
 )
-DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+
+def resolve_db_path():
+    if os.environ.get("DB_PATH"):
+        candidate = Path(os.environ["DB_PATH"]).expanduser()
+    elif DATA_DIR:
+        candidate = DATA_DIR / "barbearia_da_vinte_data.sqlite"
+    else:
+        candidate = DEFAULT_DATA_DIR / "barbearia_da_vinte_data.sqlite"
+    try:
+        candidate.parent.mkdir(parents=True, exist_ok=True)
+        return candidate
+    except OSError:
+        fallback = Path(tempfile.gettempdir()) / "BarbeariaDaVinte" / "barbearia_da_vinte_data.sqlite"
+        fallback.parent.mkdir(parents=True, exist_ok=True)
+        return fallback
+
+
+DB_PATH = resolve_db_path()
 INDEX_PATH = BASE_DIR / "index.html"
 STATIC_DIR = BASE_DIR / "static"
 HOST = os.environ.get("HOST", "127.0.0.1")
@@ -75,11 +98,26 @@ def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def prepare_db_path():
+    if DB_PATH.exists() or DB_PATH == LEGACY_DB_PATH:
+        return
+    if not LEGACY_DB_PATH.exists():
+        return
+    try:
+        shutil.copy2(LEGACY_DB_PATH, DB_PATH)
+    except OSError:
+        pass
+
+
 def db_connection():
-    conn = sqlite3.connect(DB_PATH)
+    prepare_db_path()
+    conn = sqlite3.connect(DB_PATH, timeout=20)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode = OFF")
-    conn.execute("PRAGMA synchronous = OFF")
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA synchronous = NORMAL")
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA busy_timeout = 5000")
+    conn.execute("PRAGMA temp_store = MEMORY")
     return conn
 
 

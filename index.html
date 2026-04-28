@@ -370,6 +370,11 @@
       .appointment strong { display: block; margin-bottom: 6px; }
       .outbox-item { border: 1px solid rgba(255,255,255,0.08); border-left: 4px solid #4c9b68; padding: 14px; border-radius: 4px; background: #0b0b0b; }
       .outbox-item.error { border-left-color: #cf6a58; }
+      .stats-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 18px; }
+      .stat-card { border: 1px solid rgba(255,255,255,0.08); background: linear-gradient(180deg, #141414 0%, #0b0b0b 100%); border-radius: 6px; padding: 16px; min-height: 108px; display: flex; flex-direction: column; justify-content: space-between; }
+      .stat-card span { color: var(--muted); text-transform: uppercase; font-size: 0.73rem; letter-spacing: 0.08em; }
+      .stat-card strong { font-size: 2rem; line-height: 1; }
+      .stat-card p { color: #cbb68a; font-size: 0.88rem; }
       .schedule-table { display: grid; gap: 10px; }
     .day-row { display: grid; grid-template-columns: 120px 1fr; gap: 10px; align-items: start; }
     .chips { display: flex; flex-wrap: wrap; gap: 7px; }
@@ -381,7 +386,7 @@
       .hero { min-height: auto; padding-top: 48px; background-size: min(640px, 110vw) auto; background-position: center 130px; }
       .hero-grid, .booking-shell { grid-template-columns: 1fr; }
       .info-card { max-width: 420px; }
-      .quick, .services, .barbers, .proof, .admin-grid { grid-template-columns: repeat(2, 1fr); }
+      .quick, .services, .barbers, .proof, .admin-grid, .stats-grid { grid-template-columns: repeat(2, 1fr); }
     }
     @media (max-width: 640px) {
       .nav { min-height: 68px; }
@@ -597,6 +602,7 @@
 
         <div id="tab-agenda" class="tab-panel">
           <div class="admin-card">
+            <div class="stats-grid" id="overview-stats"></div>
             <h3>Agendamentos</h3>
             <div class="list" id="appointment-list"></div>
           </div>
@@ -960,6 +966,7 @@
     }
 
     function renderAdmin() {
+      renderOverviewStats();
       renderAppointments();
       renderCustomers();
       renderEmailOutbox();
@@ -968,6 +975,28 @@
       renderSettings();
       renderSchedule();
       updateAdminView();
+    }
+
+    function renderOverviewStats() {
+      const today = new Date().toISOString().slice(0, 10);
+      const todayCount = state.appointments.filter((item) => item.date === today && item.status === "confirmed").length;
+      const confirmedCount = state.appointments.filter((item) => item.status === "confirmed").length;
+      const totalRevenue = state.appointments
+        .filter((item) => item.status !== "canceled")
+        .reduce((sum, item) => sum + Number(item.service_price || 0), 0);
+      const stats = [
+        { label: "Hoje", value: todayCount, note: "agendamentos confirmados" },
+        { label: "Agenda ativa", value: confirmedCount, note: "horarios reservados" },
+        { label: "Clientes", value: state.customers.length, note: "cadastros no sistema" },
+        { label: "Faturamento", value: money(totalRevenue), note: "agendamentos nao cancelados" },
+      ];
+      $("overview-stats").innerHTML = stats.map((item) => `
+        <div class="stat-card">
+          <span>${escapeHtml(item.label)}</span>
+          <strong>${escapeHtml(item.value)}</strong>
+          <p>${escapeHtml(item.note)}</p>
+        </div>
+      `).join("");
     }
 
     function renderAppointments() {
