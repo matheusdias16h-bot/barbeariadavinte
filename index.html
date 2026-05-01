@@ -820,7 +820,19 @@
     ];
     const resetToken = new URLSearchParams(location.search).get("resetToken") || "";
     const weekdays = ["Segunda", "Terca", "Quarta", "Quinta", "Sexta", "Sabado", "Domingo"];
-    const baseTimes = ["09:00","10:00","11:00","13:00","14:00","15:00","16:00","17:00","18:00","19:00","20:00"];
+    function buildBaseTimes() {
+      const times = [];
+      for (let hour = 9; hour < 20; hour += 1) {
+        for (let minute = 0; minute < 60; minute += 15) {
+          if (hour === 12) continue;
+          const hh = String(hour).padStart(2, "0");
+          const mm = String(minute).padStart(2, "0");
+          times.push(`${hh}:${mm}`);
+        }
+      }
+      return times;
+    }
+    const baseTimes = buildBaseTimes();
 
     const $ = (id) => document.getElementById(id);
     const money = (value) => Number(value || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });

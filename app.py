@@ -94,7 +94,36 @@ DEFAULT_BARBERS = [
     ("VenÃª", "todas", "adm03h@gmail.com", ""),
 ]
 
-DEFAULT_TIMES = ["09:00", "10:00", "11:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00"]
+SLOT_INTERVAL_MINUTES = 15
+LUNCH_START = "12:00"
+LUNCH_END = "13:00"
+LEGACY_DEFAULT_TIMES = ["09:00", "10:00", "11:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00"]
+
+
+def minutes_to_time(total_minutes):
+    return f"{total_minutes // 60:02d}:{total_minutes % 60:02d}"
+
+
+def parse_time_to_minutes(time_text):
+    hour, minute = [int(part) for part in str(time_text).split(":")]
+    return hour * 60 + minute
+
+
+def generate_default_times():
+    times = []
+    start_minutes = parse_time_to_minutes("09:00")
+    end_minutes = parse_time_to_minutes("20:00")
+    lunch_start_minutes = parse_time_to_minutes(LUNCH_START)
+    lunch_end_minutes = parse_time_to_minutes(LUNCH_END)
+    current = start_minutes
+    while current < end_minutes:
+        if current < lunch_start_minutes or current >= lunch_end_minutes:
+            times.append(minutes_to_time(current))
+        current += SLOT_INTERVAL_MINUTES
+    return times
+
+
+DEFAULT_TIMES = generate_default_times()
 
 
 def password_hash(value):
@@ -126,6 +155,33 @@ def db_connection():
     conn.execute("PRAGMA busy_timeout = 5000")
     conn.execute("PRAGMA temp_store = MEMORY")
     return conn
+
+
+def insert_default_slots(conn, barber_ids, weekdays):
+    rows = []
+    for barber_id in barber_ids:
+        for weekday in weekdays:
+            for time in DEFAULT_TIMES:
+                rows.append((barber_id, weekday, time))
+    conn.executemany(
+        "INSERT OR IGNORE INTO barber_slots (barber_id, weekday, time) VALUES (?, ?, ?)",
+        rows,
+    )
+
+
+def migrate_legacy_barber_slots(conn):
+    rows = conn.execute("SELECT barber_id, weekday, time FROM barber_slots ORDER BY barber_id, weekday, time").fetchall()
+    if not rows:
+        barber_ids = [row["id"] for row in conn.execute("SELECT id FROM barbers").fetchall()]
+        insert_default_slots(conn, barber_ids, range(0, 7))
+        return
+
+    unique_times = {row["time"] for row in rows}
+    if unique_times and unique_times.issubset(set(LEGACY_DEFAULT_TIMES)):
+        barber_days = sorted({(int(row["barber_id"]), int(row["weekday"])) for row in rows})
+        conn.execute("DELETE FROM barber_slots")
+        for barber_id, weekday in barber_days:
+            insert_default_slots(conn, [barber_id], [weekday])
 
 
 def ensure_column(conn, table_name, column_name, column_sql):
@@ -352,17 +408,7 @@ def init_db():
             """
         )
 
-        if not conn.execute("SELECT id FROM barber_slots LIMIT 1").fetchone():
-            barber_ids = [row["id"] for row in conn.execute("SELECT id FROM barbers").fetchall()]
-            rows = []
-            for barber_id in barber_ids:
-                for weekday in range(1, 7):
-                    for time in DEFAULT_TIMES:
-                        rows.append((barber_id, weekday, time))
-            conn.executemany(
-                "INSERT OR IGNORE INTO barber_slots (barber_id, weekday, time) VALUES (?, ?, ?)",
-                rows,
-            )
+        migrate_legacy_barber_slots(conn)
 
 
 def read_settings(conn):
@@ -774,13 +820,21 @@ def get_availability(barber_id, date_text, service_ids=None):
             (time_to_minutes(row["time"]), time_to_minutes(row["time"]) + int(row["busy_duration"]))
             for row in busy_rows
         ]
-        closing_minutes = time_to_minutes(slots[-1]) + 60 if slots else 0
+        closing_minutes = time_to_minutes(slots[-1]) + SLOT_INTERVAL_MINUTES if slots else 0
+        lunch_start_minutes = time_to_minutes(LUNCH_START)
+        lunch_end_minutes = time_to_minutes(LUNCH_END)
     return [
         {
             "time": time,
             "available": (
                 (appointment_date > today or time > now_time)
                 and (time_to_minutes(time) + required_duration) <= closing_minutes
+                and not ranges_overlap(
+                    time_to_minutes(time),
+                    time_to_minutes(time) + required_duration,
+                    lunch_start_minutes,
+                    lunch_end_minutes,
+                )
                 and not any(
                     ranges_overlap(time_to_minutes(time), time_to_minutes(time) + required_duration, start, end)
                     for start, end in busy_ranges
