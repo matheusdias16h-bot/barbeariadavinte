@@ -898,8 +898,10 @@ def enrich_customer_with_plan(customer):
         deactivate_expired_plans(conn)
         plan = conn.execute(
             """
-            SELECT id, start_date, end_date, note, active
-            FROM monthly_plans
+            SELECT p.id, p.barber_id, p.start_date, p.end_date, p.note, p.active,
+                   COALESCE(b.name, '') AS barber_name
+            FROM monthly_plans p
+            LEFT JOIN barbers b ON b.id = p.barber_id
             WHERE customer_id = ? AND active = 1
             ORDER BY end_date DESC, id DESC
             LIMIT 1
