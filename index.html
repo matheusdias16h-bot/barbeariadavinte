@@ -887,9 +887,9 @@
       const barberSelect = $("barber-select");
       if (barberSelect && hasActivePlan && lockedBarberId) {
         barberSelect.value = lockedBarberId;
-        barberSelect.disabled = true;
+        barberSelect.setAttribute("aria-disabled", "true");
       } else if (barberSelect) {
-        barberSelect.disabled = false;
+        barberSelect.removeAttribute("aria-disabled");
       }
 
       document.querySelectorAll("[data-pick-barber]").forEach((button) => {
@@ -1119,7 +1119,9 @@
         const payload = Object.fromEntries(formData.entries());
         payload.serviceIds = selectedServices.map((service) => Number(service.id));
         payload.serviceId = payload.serviceIds[0];
-        payload.barberId = Number(payload.barberId);
+        payload.barberId = Number($("barber-select").value || 0);
+        payload.date = $("date-input").value;
+        payload.time = $("time-input").value;
         payload.planBooking = $("plan-booking").checked;
         const response = await fetchJson("/api/appointments", { method: "POST", body: JSON.stringify(payload) });
         form.reset();
