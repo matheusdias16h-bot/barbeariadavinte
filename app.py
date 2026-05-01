@@ -256,12 +256,14 @@ def init_db():
             CREATE TABLE IF NOT EXISTS monthly_plans (
                 id INTEGER PRIMARY KEY,
                 customer_id INTEGER NOT NULL,
+                barber_id INTEGER,
                 start_date TEXT NOT NULL,
                 end_date TEXT NOT NULL,
                 note TEXT NOT NULL DEFAULT '',
                 active INTEGER NOT NULL DEFAULT 1,
                 created_at TEXT NOT NULL,
-                FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
+                FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE,
+                FOREIGN KEY (barber_id) REFERENCES barbers(id) ON DELETE SET NULL
             )
             """
         )
@@ -275,6 +277,7 @@ def init_db():
         ensure_column(conn, "appointments", "customer_id", "INTEGER")
         ensure_column(conn, "appointments", "plan_booking", "INTEGER NOT NULL DEFAULT 0")
         ensure_column(conn, "appointments", "reminder_sent_at", "TEXT NOT NULL DEFAULT ''")
+        ensure_column(conn, "monthly_plans", "barber_id", "INTEGER")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS email_outbox (
@@ -413,6 +416,7 @@ def read_public_data(include_admin=False):
             payload["appointments"] = read_appointments(conn)
             payload["customers"] = read_customers(conn)
             payload["plans"] = read_plans(conn)
+            payload["barberSummaries"] = read_barber_summaries(conn)
             payload["reviews"] = read_barber_reviews(conn)
             payload["emailOutbox"] = [
                 dict(row)
@@ -427,7 +431,7 @@ def read_appointments(conn):
     rows = conn.execute(
         """
         SELECT a.id, a.client_name, a.client_phone, a.client_email, a.notes, a.date, a.time,
-               a.status, a.created_at, a.customer_id, a.plan_booking,
+               a.status, a.created_at, a.customer_id, a.plan_booking, a.barber_id,
                COALESCE((
                    SELECT GROUP_CONCAT(s2.name, ' + ')
                    FROM appointment_services aps
@@ -524,10 +528,12 @@ def read_plans(conn):
     deactivate_expired_plans(conn)
     rows = conn.execute(
         """
-        SELECT p.id, p.customer_id, p.start_date, p.end_date, p.note, p.active, p.created_at,
-               c.name AS customer_name, c.phone AS customer_phone, c.email AS customer_email
+        SELECT p.id, p.customer_id, p.barber_id, p.start_date, p.end_date, p.note, p.active, p.created_at,
+               c.name AS customer_name, c.phone AS customer_phone, c.email AS customer_email,
+               COALESCE(b.name, '') AS barber_name
         FROM monthly_plans p
         JOIN customers c ON c.id = p.customer_id
+        LEFT JOIN barbers b ON b.id = p.barber_id
         ORDER BY p.active DESC, p.end_date DESC, p.id DESC
         """
     ).fetchall()
@@ -556,8 +562,10 @@ def read_customers(conn):
         ).fetchone()
         next_active_plan = conn.execute(
             """
-            SELECT id, start_date, end_date, note, active
-            FROM monthly_plans
+            SELECT p.id, p.barber_id, p.start_date, p.end_date, p.note, p.active,
+                   COALESCE(b.name, '') AS barber_name
+            FROM monthly_plans p
+            LEFT JOIN barbers b ON b.id = p.barber_id
             WHERE customer_id = ? AND active = 1
             ORDER BY end_date DESC, id DESC
             LIMIT 1
@@ -572,6 +580,8 @@ def read_customers(conn):
         customer["active_plan"] = enrich_plan_usage(conn, {
             "id": next_active_plan["id"],
             "customer_id": customer["id"],
+            "barber_id": next_active_plan["barber_id"],
+            "barber_name": next_active_plan["barber_name"],
             "start_date": next_active_plan["start_date"],
             "end_date": next_active_plan["end_date"],
             "note": next_active_plan["note"],
@@ -638,6 +648,50 @@ def enrich_plan_usage(conn, plan_row):
     plan["haircuts_remaining"] = max(0, PLAN_MAX_HAIRCUTS - used)
     plan["haircuts_limit"] = PLAN_MAX_HAIRCUTS
     return plan
+
+
+def read_barber_summaries(conn):
+    today = datetime.now().date()
+    week_start = today - timedelta(days=today.weekday())
+    month_start = today.replace(day=1)
+    appointments = read_appointments(conn)
+    plans = read_plans(conn)
+    summaries = []
+    for barber in conn.execute("SELECT id, name FROM barbers WHERE active = 1 ORDER BY id").fetchall():
+        barber_id = int(barber["id"])
+        barber_appointments = [
+            item for item in appointments
+            if item.get("status") in {"confirmed", "done"} and int(item.get("barber_id") or 0) == barber_id
+        ]
+        barber_plans = [item for item in plans if int(item.get("barber_id") or 0) == barber_id]
+
+        def summarize_since(start_date):
+            scoped_appointments = [
+                item for item in barber_appointments
+                if item.get("date") and datetime.strptime(item["date"], "%Y-%m-%d").date() >= start_date
+            ]
+            client_keys = {
+                int(item["customer_id"]) if item.get("customer_id") else f"{item.get('client_phone','')}|{item.get('client_name','')}"
+                for item in scoped_appointments
+            }
+            revenue = sum(float(item.get("service_price") or 0) for item in scoped_appointments)
+            scoped_plans = [
+                item for item in barber_plans
+                if item.get("start_date") and datetime.strptime(item["start_date"], "%Y-%m-%d").date() >= start_date
+            ]
+            return {
+                "clients": len(client_keys),
+                "revenue": round(revenue, 2),
+                "plans": len(scoped_plans),
+            }
+
+        summaries.append({
+            "barber_id": barber_id,
+            "barber_name": barber["name"],
+            "weekly": summarize_since(week_start),
+            "monthly": summarize_since(month_start),
+        })
+    return summaries
 
 
 def time_to_minutes(time_text):
@@ -839,6 +893,8 @@ def enrich_customer_with_plan(customer):
         customer["active_plan"] = enrich_plan_usage(conn, {
             "id": plan["id"],
             "customer_id": customer["id"],
+            "barber_id": plan["barber_id"],
+            "barber_name": plan["barber_name"],
             "start_date": plan["start_date"],
             "end_date": plan["end_date"],
             "note": plan["note"],
@@ -975,8 +1031,10 @@ def get_active_plan_for_customer(conn, customer_id, target_date):
     deactivate_expired_plans(conn)
     row = conn.execute(
         """
-        SELECT id, customer_id, start_date, end_date, note, active, created_at
-        FROM monthly_plans
+        SELECT p.id, p.customer_id, p.barber_id, p.start_date, p.end_date, p.note, p.active, p.created_at,
+               COALESCE(b.name, '') AS barber_name
+        FROM monthly_plans p
+        LEFT JOIN barbers b ON b.id = p.barber_id
         WHERE customer_id = ? AND active = 1 AND start_date <= ? AND end_date >= ?
         ORDER BY end_date DESC, id DESC
         LIMIT 1
@@ -988,22 +1046,26 @@ def get_active_plan_for_customer(conn, customer_id, target_date):
 
 def save_monthly_plan(payload):
     customer_id = int(payload.get("customerId") or 0)
+    barber_id = int(payload.get("barberId") or 0)
     start_date = str(payload.get("startDate", "")).strip()
     end_date = str(payload.get("endDate", "")).strip()
     if start_date and not end_date:
         end_date = add_one_month(start_date)
     note = str(payload.get("note", "")).strip()
-    if not customer_id or not start_date or not end_date:
-        raise ValueError("Escolha o cliente e as datas do plano.")
+    if not customer_id or not barber_id or not start_date or not end_date:
+        raise ValueError("Escolha o cliente, o barbeiro e as datas do plano.")
     with db_connection() as conn:
         deactivate_expired_plans(conn)
+        barber_exists = conn.execute("SELECT id FROM barbers WHERE id = ? AND active = 1", (barber_id,)).fetchone()
+        if not barber_exists:
+            raise ValueError("Barbeiro invalido para esse plano.")
         conn.execute("UPDATE monthly_plans SET active = 0 WHERE customer_id = ? AND active = 1", (customer_id,))
         conn.execute(
             """
-            INSERT INTO monthly_plans (customer_id, start_date, end_date, note, active, created_at)
-            VALUES (?, ?, ?, ?, 1, ?)
+            INSERT INTO monthly_plans (customer_id, barber_id, start_date, end_date, note, active, created_at)
+            VALUES (?, ?, ?, ?, ?, 1, ?)
             """,
-            (customer_id, start_date, end_date, note, datetime.now().strftime("%d/%m/%Y, %H:%M")),
+            (customer_id, barber_id, start_date, end_date, note, datetime.now().strftime("%d/%m/%Y, %H:%M")),
         )
 
 
