@@ -498,6 +498,28 @@ def read_reviewable_appointments(conn, customer_id):
     return [dict(row) for row in rows]
 
 
+def read_customer_appointments(conn, customer_id):
+    rows = conn.execute(
+        """
+        SELECT a.id, a.date, a.time, a.status, a.notes, a.plan_booking,
+               b.name AS barber_name,
+               COALESCE((
+                   SELECT GROUP_CONCAT(s2.name, ' + ')
+                   FROM appointment_services aps
+                   JOIN services s2 ON s2.id = aps.service_id
+                   WHERE aps.appointment_id = a.id
+               ), s.name) AS service_name
+        FROM appointments a
+        JOIN services s ON s.id = a.service_id
+        JOIN barbers b ON b.id = a.barber_id
+        WHERE a.customer_id = ?
+        ORDER BY a.date DESC, a.time DESC, a.id DESC
+        """,
+        (customer_id,),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
 def read_plans(conn):
     deactivate_expired_plans(conn)
     rows = conn.execute(
@@ -823,6 +845,7 @@ def enrich_customer_with_plan(customer):
             "active": plan["active"],
         }) if plan else None
         customer["reviewable_appointments"] = read_reviewable_appointments(conn, customer["id"])
+        customer["appointments"] = read_customer_appointments(conn, customer["id"])
     return customer
 
 

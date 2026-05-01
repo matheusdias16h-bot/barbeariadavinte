@@ -1703,6 +1703,112 @@
       loadAvailability();
     };
 
+    renderClientSession = function () {
+      const customer = state.customer;
+      $("client-session-card").hidden = !customer;
+      if (!customer) {
+        $("client-auth-status").textContent = "Entre ou crie sua conta para marcar horario.";
+        $("client-session-card").innerHTML = "";
+        $("client-name").value = "";
+        $("client-phone").value = "";
+        $("client-email").value = "";
+        return;
+      }
+      $("client-name").value = customer.name || "";
+      $("client-phone").value = customer.phone || "";
+      $("client-email").value = customer.email || "";
+      const plan = customer.active_plan;
+      const customerAppointments = Array.isArray(customer.appointments) ? customer.appointments : [];
+      const reviewableAppointments = Array.isArray(customer.reviewable_appointments) ? customer.reviewable_appointments : [];
+      $("client-auth-status").textContent = `Conta ativa de ${customer.name}.`;
+      $("client-session-card").innerHTML = `
+        <strong>${escapeHtml(customer.name)}</strong>
+        <p class="mini">${escapeHtml(customer.email)} - ${escapeHtml(customer.phone)}</p>
+        ${plan ? `<p><span class="status-chip">Plano ativo ${escapeHtml(formatDateBr(plan.start_date))} ate ${escapeHtml(formatDateBr(plan.end_date))}</span></p><p class="mini">Cortes usados: ${escapeHtml(plan.haircuts_used)} de ${escapeHtml(plan.haircuts_limit)} - Restam ${escapeHtml(plan.haircuts_remaining)}</p>` : '<p class="mini">Sem plano mensal ativo.</p>'}
+        ${customerAppointments.length ? `
+          <div class="admin-card" style="margin-top:14px;padding:14px;">
+            <h3 style="margin-bottom:10px;">Meus horarios</h3>
+            <div class="list">
+              ${customerAppointments.map((item) => `
+                <div class="admin-card" style="padding:14px;">
+                  <strong>${escapeHtml(formatDateBr(item.date))} - ${escapeHtml(item.time)}</strong>
+                  <p class="mini">${escapeHtml(item.service_name)} com ${escapeHtml(item.barber_name)}</p>
+                  <p class="mini">Status: ${escapeHtml(item.status)}${item.plan_booking ? ' - corte do plano' : ''}</p>
+                  ${item.notes ? `<p class="mini">Obs: ${escapeHtml(item.notes)}</p>` : ""}
+                </div>
+              `).join("")}
+            </div>
+          </div>
+        ` : '<p class="mini">Voce ainda nao tem horarios marcados na sua conta.</p>'}
+        ${reviewableAppointments.length ? `
+          <div class="admin-card" style="margin-top:14px;padding:14px;">
+            <h3 style="margin-bottom:10px;">Avaliar atendimento</h3>
+            <p class="mini" style="margin-bottom:12px;">Deixe uma nota para o barbeiro depois do corte concluido.</p>
+            <div class="list">
+              ${reviewableAppointments.map((item) => `
+                <div class="admin-card" style="padding:14px;">
+                  <strong>${escapeHtml(item.barber_name)}</strong>
+                  <p class="mini">${escapeHtml(formatDateBr(item.date))} - ${escapeHtml(item.time)} - ${escapeHtml(item.service_name)}</p>
+                  <div class="field-grid" style="margin-top:10px;">
+                    <div class="field">
+                      <label for="review-rating-${item.id}">Nota</label>
+                      <select id="review-rating-${item.id}">
+                        <option value="">Escolha</option>
+                        <option value="5">5 - Excelente</option>
+                        <option value="4">4 - Muito bom</option>
+                        <option value="3">3 - Bom</option>
+                        <option value="2">2 - Ruim</option>
+                        <option value="1">1 - Pessimo</option>
+                      </select>
+                    </div>
+                    <div class="field full">
+                      <label for="review-comment-${item.id}">Comentario</label>
+                      <textarea id="review-comment-${item.id}" placeholder="Ex: atendimento top, corte alinhado..."></textarea>
+                    </div>
+                  </div>
+                  <div class="row-actions" style="margin-top:10px;">
+                    <button class="btn secondary" data-review-submit="${item.id}" type="button">Enviar avaliacao</button>
+                  </div>
+                </div>
+              `).join("")}
+            </div>
+          </div>
+        ` : ""}
+        <div class="row-actions"><button class="btn ghost" id="client-logout-button" type="button">Sair da conta</button></div>
+      `;
+      const logoutButton = $("client-logout-button");
+      if (logoutButton) {
+        logoutButton.addEventListener("click", async () => {
+          await fetchJson("/api/client/logout", { method: "POST", body: "{}" });
+          state.customerLogged = false;
+          state.customer = null;
+          renderClientSession();
+          renderPublic();
+          setMessage($("client-auth-message"), "Conta desconectada.", "ok");
+        });
+      }
+      document.querySelectorAll("[data-review-submit]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const appointmentId = Number(button.dataset.reviewSubmit);
+          const rating = Number($(`review-rating-${appointmentId}`)?.value || 0);
+          const comment = $(`review-comment-${appointmentId}`)?.value || "";
+          try {
+            const response = await fetchJson("/api/client/review", {
+              method: "POST",
+              body: JSON.stringify({ appointmentId, rating, comment }),
+            });
+            state.customerLogged = Boolean(response.logged);
+            state.customer = response.customer || null;
+            renderClientSession();
+            if (state.adminLogged) await refreshAdmin();
+            setMessage($("booking-message"), "Avaliacao enviada com sucesso.", "ok");
+          } catch (error) {
+            setMessage($("booking-message"), error.message, "err");
+          }
+        });
+      });
+    };
+
     setDefaultDate();
     if (resetToken) setClientTab("reset");
     checkClientSession().catch(() => {});
