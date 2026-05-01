@@ -418,7 +418,7 @@ def read_public_data(include_admin=False):
             ]
             payload["appointments"] = read_appointments(conn)
             payload["customers"] = read_customers(conn)
-            payload["plans"] = read_plans(conn)
+            payload["plans"] = read_plans(conn, active_only=True)
             payload["barberSummaries"] = read_barber_summaries(conn)
             payload["reviews"] = read_barber_reviews(conn)
             payload["emailOutbox"] = [
@@ -527,16 +527,18 @@ def read_customer_appointments(conn, customer_id):
     return [dict(row) for row in rows]
 
 
-def read_plans(conn):
+def read_plans(conn, active_only=False):
     deactivate_expired_plans(conn)
+    where_clause = "WHERE p.active = 1" if active_only else ""
     rows = conn.execute(
-        """
+        f"""
         SELECT p.id, p.customer_id, p.barber_id, p.plan_name, p.plan_price, p.start_date, p.end_date, p.note, p.active, p.created_at,
                c.name AS customer_name, c.phone AS customer_phone, c.email AS customer_email,
                COALESCE(b.name, '') AS barber_name
         FROM monthly_plans p
         JOIN customers c ON c.id = p.customer_id
         LEFT JOIN barbers b ON b.id = p.barber_id
+        {where_clause}
         ORDER BY p.active DESC, p.end_date DESC, p.id DESC
         """
     ).fetchall()
@@ -658,7 +660,7 @@ def read_barber_summaries(conn):
     week_start = today - timedelta(days=today.weekday())
     month_start = today.replace(day=1)
     appointments = read_appointments(conn)
-    plans = read_plans(conn)
+    plans = read_plans(conn, active_only=True)
     summaries = []
     for barber in conn.execute("SELECT id, name FROM barbers WHERE active = 1 ORDER BY id").fetchall():
         barber_id = int(barber["id"])

@@ -1209,15 +1209,19 @@
     function renderOverviewStats() {
       const today = new Date().toISOString().slice(0, 10);
       const activeAppointments = getActiveAgendaAppointments();
+      const activePlans = Array.isArray(state.plans) ? state.plans : [];
       const todayCount = activeAppointments.filter((item) => item.date === today).length;
       const confirmedCount = activeAppointments.length;
-      const totalRevenue = activeAppointments
+      const appointmentRevenue = activeAppointments
         .reduce((sum, item) => sum + Number(item.service_price || 0), 0);
+      const planRevenue = activePlans
+        .reduce((sum, item) => sum + Number(item.plan_price || 0), 0);
+      const totalRevenue = appointmentRevenue + planRevenue;
       const stats = [
         { label: "Hoje", value: todayCount, note: "agendamentos confirmados" },
         { label: "Agenda ativa", value: confirmedCount, note: "horarios reservados" },
         { label: "Clientes", value: state.customers.length, note: "cadastros no sistema" },
-        { label: "Faturamento", value: money(totalRevenue), note: "agendamentos nao cancelados" },
+        { label: "Faturamento", value: money(totalRevenue), note: `agendamentos ativos + ${activePlans.length} planos ativos` },
       ];
       $("overview-stats").innerHTML = stats.map((item) => `
         <div class="stat-card">
