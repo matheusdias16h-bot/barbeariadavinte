@@ -372,6 +372,7 @@ def read_settings(conn):
 
 
 def read_public_data(include_admin=False):
+    init_db()
     with db_connection() as conn:
         settings = read_settings(conn)
         review_summary = {
@@ -876,6 +877,7 @@ def get_customer_by_session(token):
 def enrich_customer_with_plan(customer):
     if not customer:
         return None
+    init_db()
     with db_connection() as conn:
         deactivate_expired_plans(conn)
         plan = conn.execute(
