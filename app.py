@@ -567,8 +567,8 @@ def read_customers(conn):
                    COALESCE(b.name, '') AS barber_name
             FROM monthly_plans p
             LEFT JOIN barbers b ON b.id = p.barber_id
-            WHERE customer_id = ? AND active = 1
-            ORDER BY end_date DESC, id DESC
+            WHERE p.customer_id = ? AND p.active = 1
+            ORDER BY p.end_date DESC, p.id DESC
             LIMIT 1
             """,
             (customer["id"],),
@@ -1037,8 +1037,8 @@ def get_active_plan_for_customer(conn, customer_id, target_date):
                COALESCE(b.name, '') AS barber_name
         FROM monthly_plans p
         LEFT JOIN barbers b ON b.id = p.barber_id
-        WHERE customer_id = ? AND active = 1 AND start_date <= ? AND end_date >= ?
-        ORDER BY end_date DESC, id DESC
+        WHERE p.customer_id = ? AND p.active = 1 AND p.start_date <= ? AND p.end_date >= ?
+        ORDER BY p.end_date DESC, p.id DESC
         LIMIT 1
         """,
         (customer_id, target_date, target_date),
