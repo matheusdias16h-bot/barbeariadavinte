@@ -902,8 +902,8 @@ def enrich_customer_with_plan(customer):
                    COALESCE(b.name, '') AS barber_name
             FROM monthly_plans p
             LEFT JOIN barbers b ON b.id = p.barber_id
-            WHERE customer_id = ? AND active = 1
-            ORDER BY end_date DESC, id DESC
+            WHERE p.customer_id = ? AND p.active = 1
+            ORDER BY p.end_date DESC, p.id DESC
             LIMIT 1
             """,
             (customer["id"],),
