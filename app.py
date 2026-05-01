@@ -1082,6 +1082,11 @@ def normalize_money(value):
         return 0.0
 
 
+def is_monthly_plan_service_name(name):
+    normalized = str(name or "").strip().lower()
+    return "ja tenho mensal" in normalized or "já tenho mensal" in normalized
+
+
 def save_admin_data(payload):
     settings = DEFAULT_SETTINGS.copy()
     settings.update({key: str(payload.get("settings", {}).get(key, settings[key])).strip() for key in settings})
@@ -1213,14 +1218,24 @@ def create_appointment(payload, customer=None):
         total_price = sum(float(row["price"]) for row in services)
         total_duration = sum(int(row["duration"]) for row in services)
         service_names = " + ".join(row["name"] for row in services)
+        active_plan = get_active_plan_for_customer(conn, customer_id, date_text) if customer_id else None
+        monthly_plan_services = [row for row in services if is_monthly_plan_service_name(row["name"])]
+        if active_plan:
+            if len(services) != 1 or len(monthly_plan_services) != 1:
+                raise ValueError("Quem tem plano ativo precisa marcar usando somente o servico Ja tenho mensal.")
+            if int(active_plan.get("barber_id") or 0) != barber_id:
+                raise ValueError(f"Esse plano mensal so pode ser usado com o barbeiro {active_plan.get('barber_name') or 'do plano'}.")
+            plan_booking = True
         if plan_booking:
             if not customer_id:
                 raise ValueError("Entre na sua conta para usar corte do plano.")
-            if any("corte" not in row["name"].lower() for row in services):
-                raise ValueError("O plano mensal so pode ser usado em servicos de corte.")
-            active_plan = get_active_plan_for_customer(conn, customer_id, date_text)
+            if len(services) != 1 or len(monthly_plan_services) != 1:
+                raise ValueError("O plano mensal so pode ser usado somente com o servico Ja tenho mensal.")
+            active_plan = active_plan or get_active_plan_for_customer(conn, customer_id, date_text)
             if not active_plan:
                 raise ValueError("Seu plano mensal nao esta ativo para essa data.")
+            if int(active_plan.get("barber_id") or 0) != barber_id:
+                raise ValueError(f"Esse plano mensal so pode ser usado com o barbeiro {active_plan.get('barber_name') or 'do plano'}.")
             if int(active_plan["haircuts_used"]) >= PLAN_MAX_HAIRCUTS:
                 raise ValueError("Esse plano ja usou os 4 cortes disponiveis.")
         try:
