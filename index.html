@@ -317,6 +317,48 @@
       background: rgba(181,154,102,0.08);
       border: 1px solid rgba(181,154,102,0.2);
     }
+    .client-shell { display: grid; gap: 14px; }
+    .client-shell-head { display: flex; align-items: start; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+    .client-identity { display: grid; gap: 6px; }
+    .client-identity strong { font-size: 1.05rem; }
+    .client-panel-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+    .client-panel-tab {
+      min-height: 36px;
+      padding: 0 12px;
+      border-radius: 4px;
+      border: 1px solid rgba(255,255,255,0.12);
+      background: #0d0d0d;
+      color: var(--muted);
+      font-weight: 700;
+      text-transform: uppercase;
+      font-size: 0.74rem;
+      letter-spacing: 0.05em;
+    }
+    .client-panel-tab.active { background: var(--gold); border-color: var(--gold); color: #111; }
+    .client-summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+    .client-metric {
+      padding: 12px;
+      border-radius: 5px;
+      background: rgba(0,0,0,0.22);
+      border: 1px solid rgba(255,255,255,0.08);
+      display: grid;
+      gap: 4px;
+    }
+    .client-metric span { color: var(--muted); font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.06em; }
+    .client-metric strong { font-size: 1.1rem; }
+    .client-panel-stack { display: grid; gap: 12px; }
+    .client-panel-section { display: grid; gap: 10px; }
+    .client-panel-section h3 { font-size: 1rem; text-transform: uppercase; }
+    .client-appointment-list { display: grid; gap: 10px; }
+    .client-appointment-card {
+      padding: 14px;
+      border-radius: 5px;
+      background: rgba(0,0,0,0.22);
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+    .client-appointment-top { display: flex; align-items: start; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+    .client-appointment-card strong { font-size: 1rem; }
+    .client-appointment-card p { color: var(--muted); line-height: 1.5; }
     .checkbox-line { display: flex; align-items: center; gap: 10px; margin-top: 4px; color: var(--ink); }
     .checkbox-line input { width: 16px; height: 16px; accent-color: var(--gold); }
     .status-chip {
@@ -332,6 +374,9 @@
       text-transform: uppercase;
       letter-spacing: 0.05em;
     }
+    .status-chip.confirmed { color: #d8d1c7; border-color: rgba(255,255,255,0.16); }
+    .status-chip.done { color: #8bd0a3; border-color: rgba(139,208,163,0.3); }
+    .status-chip.canceled { color: #e39480; border-color: rgba(227,148,128,0.3); }
     .proof { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; border-top: 1px solid rgba(255,255,255,0.07); border-bottom: 1px solid rgba(255,255,255,0.07); background: #060606; }
     .proof div { padding: 28px 22px; display: flex; gap: 14px; align-items: center; justify-content: center; border-right: 1px solid rgba(255,255,255,0.07); text-transform: uppercase; color: #d9d3ca; }
     .proof div:last-child { border-right: 0; }
@@ -402,6 +447,7 @@
       .hero-grid, .booking-shell { grid-template-columns: 1fr; }
       .info-card { max-width: 420px; }
       .quick, .services, .barbers, .proof, .admin-grid, .stats-grid { grid-template-columns: repeat(2, 1fr); }
+      .client-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
     @media (max-width: 640px) {
       .nav { min-height: 68px; }
@@ -409,6 +455,8 @@
       .admin-open { padding: 10px 12px; font-size: 0.72rem; }
       .hero { padding-bottom: 18px; }
       .quick, .services, .barbers, .proof, .field-grid, .admin-grid { grid-template-columns: 1fr; }
+      .client-summary-grid { grid-template-columns: 1fr; }
+      .client-shell-head { flex-direction: column; }
       .quick-item { border-right: 0; border-bottom: 1px dashed rgba(255,255,255,0.12); }
       .quick-cta .btn { max-width: none; }
       .section-head { align-items: start; flex-direction: column; }
@@ -1854,62 +1902,129 @@
       const plan = customer.active_plan;
       const customerAppointments = Array.isArray(customer.appointments) ? customer.appointments : [];
       const reviewableAppointments = Array.isArray(customer.reviewable_appointments) ? customer.reviewable_appointments : [];
+      const activeAppointments = customerAppointments.filter((item) => item.status === "confirmed");
+      const historyAppointments = customerAppointments.filter((item) => item.status !== "confirmed");
+      const doneCount = customerAppointments.filter((item) => item.status === "done").length;
+      const statusLabel = (status) => ({
+        confirmed: "Confirmado",
+        done: "Concluido",
+        canceled: "Cancelado",
+      }[status] || status);
+      const renderAppointmentCard = (item) => `
+        <article class="client-appointment-card">
+          <div class="client-appointment-top">
+            <div>
+              <strong>${escapeHtml(formatDateBr(item.date))} - ${escapeHtml(item.time)}</strong>
+              <p>${escapeHtml(item.service_name)} com ${escapeHtml(item.barber_name)}</p>
+            </div>
+            <span class="status-chip ${escapeHtml(item.status)}">${escapeHtml(statusLabel(item.status))}</span>
+          </div>
+          <p class="mini">${item.plan_booking ? "Corte usado pelo plano mensal." : "Agendamento particular."}</p>
+          ${item.notes ? `<p class="mini">Obs: ${escapeHtml(item.notes)}</p>` : ""}
+        </article>
+      `;
       $("client-auth-status").textContent = `Conta ativa de ${customer.name}.`;
       $("client-session-card").innerHTML = `
-        <strong>${escapeHtml(customer.name)}</strong>
-        <p class="mini">${escapeHtml(customer.email)} - ${escapeHtml(customer.phone)}</p>
-        ${plan ? `<p><span class="status-chip">Plano ativo ${escapeHtml(formatDateBr(plan.start_date))} ate ${escapeHtml(formatDateBr(plan.end_date))}</span></p><p class="mini">Cortes usados: ${escapeHtml(plan.haircuts_used)} de ${escapeHtml(plan.haircuts_limit)} - Restam ${escapeHtml(plan.haircuts_remaining)}</p><p class="mini">Com plano ativo, o agendamento fica liberado apenas em <strong>Ja tenho mensal</strong> com <strong>${escapeHtml(plan.barber_name || "o barbeiro do plano")}</strong>.</p>` : '<p class="mini">Sem plano mensal ativo.</p>'}
-        ${customerAppointments.length ? `
-          <div class="admin-card" style="margin-top:14px;padding:14px;">
-            <h3 style="margin-bottom:10px;">Meus horarios</h3>
-            <div class="list">
-              ${customerAppointments.map((item) => `
-                <div class="admin-card" style="padding:14px;">
-                  <strong>${escapeHtml(formatDateBr(item.date))} - ${escapeHtml(item.time)}</strong>
-                  <p class="mini">${escapeHtml(item.service_name)} com ${escapeHtml(item.barber_name)}</p>
-                  <p class="mini">Status: ${escapeHtml(item.status)}${item.plan_booking ? ' - corte do plano' : ''}</p>
-                  ${item.notes ? `<p class="mini">Obs: ${escapeHtml(item.notes)}</p>` : ""}
-                </div>
-              `).join("")}
+        <div class="client-shell">
+          <div class="client-shell-head">
+            <div class="client-identity">
+              <strong>${escapeHtml(customer.name)}</strong>
+              <p class="mini">${escapeHtml(customer.email)} - ${escapeHtml(customer.phone)}</p>
+            </div>
+            <div class="client-panel-tabs">
+              <button class="client-panel-tab active" data-client-panel-tab="resumo" type="button">Resumo</button>
+              <button class="client-panel-tab" data-client-panel-tab="agenda" type="button">Meus horarios ${customerAppointments.length ? `(${escapeHtml(customerAppointments.length)})` : ""}</button>
+              ${reviewableAppointments.length ? `<button class="client-panel-tab" data-client-panel-tab="avaliacoes" type="button">Avaliar</button>` : ""}
             </div>
           </div>
-        ` : '<p class="mini">Voce ainda nao tem horarios marcados na sua conta.</p>'}
-        ${reviewableAppointments.length ? `
-          <div class="admin-card" style="margin-top:14px;padding:14px;">
-            <h3 style="margin-bottom:10px;">Avaliar atendimento</h3>
-            <p class="mini" style="margin-bottom:12px;">Deixe uma nota para o barbeiro depois do corte concluido.</p>
-            <div class="list">
-              ${reviewableAppointments.map((item) => `
-                <div class="admin-card" style="padding:14px;">
-                  <strong>${escapeHtml(item.barber_name)}</strong>
-                  <p class="mini">${escapeHtml(formatDateBr(item.date))} - ${escapeHtml(item.time)} - ${escapeHtml(item.service_name)}</p>
-                  <div class="field-grid" style="margin-top:10px;">
-                    <div class="field">
-                      <label for="review-rating-${item.id}">Nota</label>
-                      <select id="review-rating-${item.id}">
-                        <option value="">Escolha</option>
-                        <option value="5">5 - Excelente</option>
-                        <option value="4">4 - Muito bom</option>
-                        <option value="3">3 - Bom</option>
-                        <option value="2">2 - Ruim</option>
-                        <option value="1">1 - Pessimo</option>
-                      </select>
-                    </div>
-                    <div class="field full">
-                      <label for="review-comment-${item.id}">Comentario</label>
-                      <textarea id="review-comment-${item.id}" placeholder="Ex: atendimento top, corte alinhado..."></textarea>
-                    </div>
-                  </div>
-                  <div class="row-actions" style="margin-top:10px;">
-                    <button class="btn secondary" data-review-submit="${item.id}" type="button">Enviar avaliacao</button>
+
+          <div class="client-panel-stack">
+            <section data-client-panel="resumo">
+              <div class="client-summary-grid">
+                <div class="client-metric">
+                  <span>Horarios ativos</span>
+                  <strong>${escapeHtml(activeAppointments.length)}</strong>
+                </div>
+                <div class="client-metric">
+                  <span>Concluidos</span>
+                  <strong>${escapeHtml(doneCount)}</strong>
+                </div>
+                <div class="client-metric">
+                  <span>Plano mensal</span>
+                  <strong>${plan ? "Ativo" : "Sem plano"}</strong>
+                </div>
+              </div>
+              <div class="client-panel-section" style="margin-top:12px;">
+                ${plan ? `<p><span class="status-chip confirmed">Plano ativo ${escapeHtml(formatDateBr(plan.start_date))} ate ${escapeHtml(formatDateBr(plan.end_date))}</span></p><p class="mini">Cortes usados: ${escapeHtml(plan.haircuts_used)} de ${escapeHtml(plan.haircuts_limit)} - Restam ${escapeHtml(plan.haircuts_remaining)}</p><p class="mini">Com plano ativo, o agendamento fica liberado apenas em <strong>Ja tenho mensal</strong> com <strong>${escapeHtml(plan.barber_name || "o barbeiro do plano")}</strong>.</p>` : '<p class="mini">Sem plano mensal ativo.</p>'}
+              </div>
+            </section>
+
+            <section data-client-panel="agenda" hidden>
+              <div class="client-panel-section">
+                <h3>Proximos horarios</h3>
+                ${activeAppointments.length ? `<div class="client-appointment-list">${activeAppointments.map(renderAppointmentCard).join("")}</div>` : '<p class="mini">Voce ainda nao tem horarios ativos na conta.</p>'}
+              </div>
+              ${historyAppointments.length ? `
+                <div class="client-panel-section" style="margin-top:12px;">
+                  <h3>Historico</h3>
+                  <div class="client-appointment-list">${historyAppointments.map(renderAppointmentCard).join("")}</div>
+                </div>
+              ` : ""}
+            </section>
+
+            ${reviewableAppointments.length ? `
+              <section data-client-panel="avaliacoes" hidden>
+                <div class="client-panel-section">
+                  <h3>Avaliar atendimento</h3>
+                  <p class="mini">Deixe uma nota para o barbeiro depois do corte concluido.</p>
+                  <div class="client-appointment-list">
+                    ${reviewableAppointments.map((item) => `
+                      <article class="client-appointment-card">
+                        <strong>${escapeHtml(item.barber_name)}</strong>
+                        <p class="mini">${escapeHtml(formatDateBr(item.date))} - ${escapeHtml(item.time)} - ${escapeHtml(item.service_name)}</p>
+                        <div class="field-grid" style="margin-top:10px;">
+                          <div class="field">
+                            <label for="review-rating-${item.id}">Nota</label>
+                            <select id="review-rating-${item.id}">
+                              <option value="">Escolha</option>
+                              <option value="5">5 - Excelente</option>
+                              <option value="4">4 - Muito bom</option>
+                              <option value="3">3 - Bom</option>
+                              <option value="2">2 - Ruim</option>
+                              <option value="1">1 - Pessimo</option>
+                            </select>
+                          </div>
+                          <div class="field full">
+                            <label for="review-comment-${item.id}">Comentario</label>
+                            <textarea id="review-comment-${item.id}" placeholder="Ex: atendimento top, corte alinhado..."></textarea>
+                          </div>
+                        </div>
+                        <div class="row-actions" style="margin-top:10px;">
+                          <button class="btn secondary" data-review-submit="${item.id}" type="button">Enviar avaliacao</button>
+                        </div>
+                      </article>
+                    `).join("")}
                   </div>
                 </div>
-              `).join("")}
-            </div>
+              </section>
+            ` : ""}
           </div>
-        ` : ""}
-        <div class="row-actions"><button class="btn ghost" id="client-logout-button" type="button">Sair da conta</button></div>
+
+          <div class="row-actions"><button class="btn ghost" id="client-logout-button" type="button">Sair da conta</button></div>
+        </div>
       `;
+      const setClientPanel = (panelName) => {
+        document.querySelectorAll("[data-client-panel]").forEach((panel) => {
+          panel.hidden = panel.dataset.clientPanel !== panelName;
+        });
+        document.querySelectorAll("[data-client-panel-tab]").forEach((button) => {
+          button.classList.toggle("active", button.dataset.clientPanelTab === panelName);
+        });
+      };
+      document.querySelectorAll("[data-client-panel-tab]").forEach((button) => {
+        button.addEventListener("click", () => setClientPanel(button.dataset.clientPanelTab));
+      });
+      setClientPanel("resumo");
       const logoutButton = $("client-logout-button");
       if (logoutButton) {
         logoutButton.addEventListener("click", async () => {
