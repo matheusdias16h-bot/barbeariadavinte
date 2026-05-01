@@ -1479,7 +1479,7 @@
         const response = await fetchJson("/api/client/login", { method: "POST", body: JSON.stringify(payload) });
         state.customerLogged = Boolean(response.logged);
         state.customer = response.customer || null;
-        renderClientSession();
+        renderPublic();
         setMessage($("client-auth-message"), "Conta conectada.", "ok");
       } catch (error) {
         setMessage($("client-auth-message"), error.message, "err");
@@ -1522,7 +1522,7 @@
         const response = await fetchJson("/api/client/register", { method: "POST", body: JSON.stringify(payload) });
         state.customerLogged = Boolean(response.logged);
         state.customer = response.customer || null;
-        renderClientSession();
+        renderPublic();
         setMessage($("client-auth-message"), "Conta criada e conectada.", "ok");
       } catch (error) {
         setMessage($("client-auth-message"), error.message, "err");
@@ -1734,7 +1734,7 @@
         state.customerLogged = false;
         state.customer = null;
       }
-      renderClientSession();
+      renderPublic();
     };
 
     renderPublic = function () {
