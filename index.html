@@ -1946,9 +1946,25 @@
             <p class="mini">Status: ${plan.active ? "ativo" : "encerrado automaticamente"}</p>
             <p class="mini">Cortes usados: ${escapeHtml(plan.haircuts_used)} de ${escapeHtml(plan.haircuts_limit)} - Restam ${escapeHtml(plan.haircuts_remaining)}</p>
             <p class="mini">Observacao: ${escapeHtml(plan.note || "nenhuma")}</p>
-          <p class="mini">Criado em ${escapeHtml(plan.created_at)}</p>
+            <p class="mini">Criado em ${escapeHtml(plan.created_at)}</p>
+            ${plan.active ? `<div class="row-actions" style="margin-top:10px;"><button class="btn secondary" type="button" data-plan-cancel="${plan.id}">Cancelar plano</button></div>` : ""}
         </div>
       `).join("") : '<p class="mini">Nenhum plano cadastrado ainda.</p>';
+      document.querySelectorAll("[data-plan-cancel]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          try {
+            const payload = await fetchJson("/api/admin/plan-cancel", {
+              method: "POST",
+              body: JSON.stringify({ id: Number(button.dataset.planCancel) }),
+            });
+            Object.assign(state, payload);
+            renderAdmin();
+            setMessage($("admin-message"), "Plano cancelado.", "ok");
+          } catch (error) {
+            setMessage($("admin-message"), error.message, "err");
+          }
+        });
+      });
     };
 
     function renderBarberSummaries() {
@@ -1961,7 +1977,8 @@
               <div class="admin-card" style="padding:12px;">
                 <p class="mini">Clientes: ${escapeHtml(item.weekly.clients)}</p>
                 <p class="mini">Faturamento: ${escapeHtml(money(item.weekly.revenue))}</p>
-                <p class="mini">Planos mensais: ${escapeHtml(item.weekly.plans)}</p>
+                <p class="mini">Servicos: ${escapeHtml(money(item.weekly.services_revenue || 0))}</p>
+                <p class="mini">Planos mensais: ${escapeHtml(item.weekly.plans)} (${escapeHtml(money(item.weekly.plans_revenue || 0))})</p>
               </div>
             </div>
             <div class="field">
@@ -1969,7 +1986,8 @@
               <div class="admin-card" style="padding:12px;">
                 <p class="mini">Clientes: ${escapeHtml(item.monthly.clients)}</p>
                 <p class="mini">Faturamento: ${escapeHtml(money(item.monthly.revenue))}</p>
-                <p class="mini">Planos mensais: ${escapeHtml(item.monthly.plans)}</p>
+                <p class="mini">Servicos: ${escapeHtml(money(item.monthly.services_revenue || 0))}</p>
+                <p class="mini">Planos mensais: ${escapeHtml(item.monthly.plans)} (${escapeHtml(money(item.monthly.plans_revenue || 0))})</p>
               </div>
             </div>
           </div>

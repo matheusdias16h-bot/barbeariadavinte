@@ -682,9 +682,13 @@ def read_barber_summaries(conn):
                 item for item in barber_plans
                 if item.get("start_date") and datetime.strptime(item["start_date"], "%Y-%m-%d").date() >= start_date
             ]
+            plan_revenue = sum(float(item.get("plan_price") or 0) for item in scoped_plans)
+            total_revenue = revenue + plan_revenue
             return {
                 "clients": len(client_keys),
-                "revenue": round(revenue, 2),
+                "revenue": round(total_revenue, 2),
+                "services_revenue": round(revenue, 2),
+                "plans_revenue": round(plan_revenue, 2),
                 "plans": len(scoped_plans),
             }
 
@@ -1073,6 +1077,18 @@ def save_monthly_plan(payload):
             """,
             (customer_id, barber_id, plan_name, plan_price, start_date, end_date, note, datetime.now().strftime("%d/%m/%Y, %H:%M")),
         )
+
+
+def cancel_monthly_plan(plan_id):
+    if plan_id <= 0:
+        raise ValueError("Plano invalido.")
+    with db_connection() as conn:
+        row = conn.execute("SELECT id, active FROM monthly_plans WHERE id = ?", (plan_id,)).fetchone()
+        if not row:
+            raise ValueError("Plano nao encontrado.")
+        if not int(row["active"]):
+            raise ValueError("Esse plano ja esta encerrado.")
+        conn.execute("UPDATE monthly_plans SET active = 0 WHERE id = ?", (plan_id,))
 
 
 def normalize_money(value):
@@ -1527,6 +1543,10 @@ class AppHandler(BaseHTTPRequestHandler):
             if not self.require_auth():
                 return
             return self.handle_save_plan()
+        if parsed.path == "/api/admin/plan-cancel":
+            if not self.require_auth():
+                return
+            return self.handle_cancel_plan()
         return self.send_error_json(HTTPStatus.NOT_FOUND, "Rota nao encontrada.")
 
     def serve_file(self, path, content_type):
@@ -1708,6 +1728,16 @@ class AppHandler(BaseHTTPRequestHandler):
             return
         try:
             save_monthly_plan(payload)
+        except ValueError as exc:
+            return self.send_error_json(HTTPStatus.BAD_REQUEST, str(exc))
+        return self.send_json(HTTPStatus.OK, read_public_data(include_admin=True))
+
+    def handle_cancel_plan(self):
+        payload = self.read_json_body()
+        if payload is None:
+            return
+        try:
+            cancel_monthly_plan(int(payload.get("id") or 0))
         except ValueError as exc:
             return self.send_error_json(HTTPStatus.BAD_REQUEST, str(exc))
         return self.send_json(HTTPStatus.OK, read_public_data(include_admin=True))
