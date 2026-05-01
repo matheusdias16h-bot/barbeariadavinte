@@ -418,7 +418,7 @@ def read_public_data(include_admin=False):
             ]
             payload["appointments"] = read_appointments(conn)
             payload["customers"] = read_customers(conn)
-            payload["plans"] = read_plans(conn, active_only=True)
+            payload["plans"] = read_plans(conn)
             payload["barberSummaries"] = read_barber_summaries(conn)
             payload["reviews"] = read_barber_reviews(conn)
             payload["emailOutbox"] = [
@@ -655,12 +655,20 @@ def enrich_plan_usage(conn, plan_row):
     return plan
 
 
+def is_canceled_plan(plan_row):
+    if not plan_row:
+        return False
+    if int(plan_row.get("active") or 0):
+        return False
+    return str(plan_row.get("end_date") or "") >= datetime.now().date().isoformat()
+
+
 def read_barber_summaries(conn):
     today = datetime.now().date()
     week_start = today - timedelta(days=today.weekday())
     month_start = today.replace(day=1)
     appointments = read_appointments(conn)
-    plans = read_plans(conn, active_only=True)
+    plans = [item for item in read_plans(conn) if not is_canceled_plan(item)]
     summaries = []
     for barber in conn.execute("SELECT id, name FROM barbers WHERE active = 1 ORDER BY id").fetchall():
         barber_id = int(barber["id"])

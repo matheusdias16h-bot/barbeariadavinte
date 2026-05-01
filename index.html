@@ -845,6 +845,13 @@
       return barberId ? String(barberId) : "";
     }
 
+    function isCanceledPlan(plan) {
+      if (!plan) return false;
+      if (plan.active) return false;
+      const today = new Date().toISOString().slice(0, 10);
+      return String(plan.end_date || "") >= today;
+    }
+
     function syncPlanBookingUi() {
       const plan = state.customer?.active_plan;
       const hasActivePlan = Boolean(plan);
@@ -1209,19 +1216,19 @@
     function renderOverviewStats() {
       const today = new Date().toISOString().slice(0, 10);
       const activeAppointments = getActiveAgendaAppointments();
-      const activePlans = Array.isArray(state.plans) ? state.plans : [];
+      const countablePlans = Array.isArray(state.plans) ? state.plans.filter((plan) => !isCanceledPlan(plan)) : [];
       const todayCount = activeAppointments.filter((item) => item.date === today).length;
       const confirmedCount = activeAppointments.length;
       const appointmentRevenue = activeAppointments
         .reduce((sum, item) => sum + Number(item.service_price || 0), 0);
-      const planRevenue = activePlans
+      const planRevenue = countablePlans
         .reduce((sum, item) => sum + Number(item.plan_price || 0), 0);
       const totalRevenue = appointmentRevenue + planRevenue;
       const stats = [
         { label: "Hoje", value: todayCount, note: "agendamentos confirmados" },
         { label: "Agenda ativa", value: confirmedCount, note: "horarios reservados" },
         { label: "Clientes", value: state.customers.length, note: "cadastros no sistema" },
-        { label: "Faturamento", value: money(totalRevenue), note: `agendamentos ativos + ${activePlans.length} planos ativos` },
+        { label: "Faturamento", value: money(totalRevenue), note: `agendamentos ativos + ${countablePlans.length} planos contabilizados` },
       ];
       $("overview-stats").innerHTML = stats.map((item) => `
         <div class="stat-card">
@@ -1924,6 +1931,7 @@
     };
 
     renderPlans = function () {
+      const visiblePlans = state.plans.filter((plan) => plan.active);
       $("plan-customer-select").innerHTML = [`<option value="">Escolha um cliente</option>`].concat(
         state.customers.map((customer) => `<option value="${customer.id}">${escapeHtml(customer.name)} - ${escapeHtml(customer.phone)}</option>`)
       ).join("");
@@ -1940,7 +1948,7 @@
           $("plan-price-input").value = selected ? selected.price : "";
         });
       }
-      $("plan-list").innerHTML = state.plans.length ? state.plans.map((plan) => `
+      $("plan-list").innerHTML = visiblePlans.length ? visiblePlans.map((plan) => `
         <div class="admin-card">
             <h3>${escapeHtml(plan.customer_name)}</h3>
             <p class="mini">${escapeHtml(plan.customer_email)} - ${escapeHtml(plan.customer_phone)}</p>
