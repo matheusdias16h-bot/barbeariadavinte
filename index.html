@@ -699,6 +699,14 @@
                   <select id="plan-barber-select"></select>
                 </div>
                 <div class="field">
+                  <label for="plan-type-select">Tipo do plano</label>
+                  <select id="plan-type-select"></select>
+                </div>
+                <div class="field">
+                  <label for="plan-price-input">Valor do plano</label>
+                  <input id="plan-price-input" type="number" min="0" step="0.01" readonly />
+                </div>
+                <div class="field">
                   <label for="plan-start-date">Inicio do plano</label>
                   <input id="plan-start-date" type="date" />
                 </div>
@@ -804,6 +812,12 @@
         date: "",
       },
     };
+    const planCatalog = [
+      { name: "Plano corte", price: 100 },
+      { name: "Plano corte e sobrancelha", price: 140 },
+      { name: "Plano corte e sobrancelha e cavanhaque", price: 180 },
+      { name: "Plano corte e sobrancelha e barba", price: 200 },
+    ];
     const resetToken = new URLSearchParams(location.search).get("resetToken") || "";
     const weekdays = ["Segunda", "Terca", "Quarta", "Quinta", "Sexta", "Sabado", "Domingo"];
     const baseTimes = ["09:00","10:00","11:00","13:00","14:00","15:00","16:00","17:00","18:00","19:00","20:00"];
@@ -1481,16 +1495,20 @@
       try {
         const customerId = Number($("plan-customer-select").value);
         const barberId = Number($("plan-barber-select").value);
+        const planName = $("plan-type-select").value;
+        const planPrice = Number($("plan-price-input").value || 0);
         const startDate = $("plan-start-date").value;
         const endDate = $("plan-end-date").value;
         const note = $("plan-note").value;
         const payload = await fetchJson("/api/admin/plan", {
           method: "POST",
-          body: JSON.stringify({ customerId, barberId, startDate, endDate, note }),
+          body: JSON.stringify({ customerId, barberId, planName, planPrice, startDate, endDate, note }),
         });
         Object.assign(state, payload);
         $("plan-customer-select").value = "";
         $("plan-barber-select").value = "";
+        $("plan-type-select").value = "";
+        $("plan-price-input").value = "";
         $("plan-start-date").value = "";
         $("plan-end-date").value = "";
         $("plan-note").value = "";
@@ -1836,10 +1854,21 @@
       $("plan-barber-select").innerHTML = [`<option value="">Escolha um barbeiro</option>`].concat(
         state.barbers.map((barber) => `<option value="${barber.id}">${escapeHtml(barber.name)}</option>`)
       ).join("");
+      $("plan-type-select").innerHTML = [`<option value="">Escolha um plano</option>`].concat(
+        planCatalog.map((plan) => `<option value="${escapeHtml(plan.name)}" data-price="${escapeHtml(plan.price)}">${escapeHtml(plan.name)} - ${escapeHtml(money(plan.price))}</option>`)
+      ).join("");
+      if (!$("plan-type-select").dataset.bound) {
+        $("plan-type-select").dataset.bound = "true";
+        $("plan-type-select").addEventListener("change", () => {
+          const selected = planCatalog.find((plan) => plan.name === $("plan-type-select").value);
+          $("plan-price-input").value = selected ? selected.price : "";
+        });
+      }
       $("plan-list").innerHTML = state.plans.length ? state.plans.map((plan) => `
         <div class="admin-card">
             <h3>${escapeHtml(plan.customer_name)}</h3>
             <p class="mini">${escapeHtml(plan.customer_email)} - ${escapeHtml(plan.customer_phone)}</p>
+            <p class="mini">${escapeHtml(plan.plan_name || "Plano mensal")} - ${escapeHtml(money(plan.plan_price || 0))}</p>
             <p class="mini">Plano mensal com o barbeiro ${escapeHtml(plan.barber_name || "nao definido")}</p>
             <p class="mini">Plano de ${escapeHtml(formatDateBr(plan.start_date))} ate ${escapeHtml(formatDateBr(plan.end_date))}</p>
             <p class="mini">Status: ${plan.active ? "ativo" : "encerrado automaticamente"}</p>
