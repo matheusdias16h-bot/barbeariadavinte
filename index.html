@@ -671,6 +671,7 @@
             <div class="tabs" id="tabs">
               <button class="tab" data-tab="resumo" type="button">Resumo</button>
               <button class="tab active" data-tab="agenda" type="button">Agenda</button>
+              <button class="tab" data-tab="agendar" type="button">Agendar cliente</button>
               <button class="tab" data-tab="clientes" type="button">Clientes</button>
               <button class="tab" data-tab="planos" type="button">Planos</button>
               <button class="tab" data-tab="avaliacoes" type="button">Avaliacoes</button>
@@ -714,6 +715,65 @@
             </div>
             <h3>Agendamentos</h3>
             <div class="list" id="appointment-list"></div>
+          </div>
+        </div>
+
+        <div id="tab-agendar" class="tab-panel" hidden>
+          <div class="admin-card">
+            <div class="admin-actions">
+              <div>
+                <h3>Agendar pelo admin</h3>
+                <p class="mini">Use essa tela para marcar horario para cliente que prefere pedir ajuda no balcão ou no WhatsApp.</p>
+              </div>
+            </div>
+            <div class="field-grid">
+              <div class="field">
+                <label for="admin-booking-customer">Cliente cadastrado</label>
+                <select id="admin-booking-customer"></select>
+              </div>
+              <div class="field">
+                <label for="admin-booking-email">E-mail</label>
+                <input id="admin-booking-email" type="email" placeholder="cliente@email.com" />
+              </div>
+              <div class="field">
+                <label for="admin-booking-name">Nome</label>
+                <input id="admin-booking-name" placeholder="Nome do cliente" />
+              </div>
+              <div class="field">
+                <label for="admin-booking-phone">WhatsApp</label>
+                <input id="admin-booking-phone" placeholder="(31) 99999-9999" />
+              </div>
+              <div class="field full">
+                <label>Servicos</label>
+                <div class="service-choice-grid" id="admin-service-choice-list"></div>
+                <div class="booking-summary" id="admin-booking-summary"></div>
+              </div>
+              <div class="field">
+                <label for="admin-booking-barber">Barbeiro</label>
+                <select id="admin-booking-barber"></select>
+              </div>
+              <div class="field">
+                <label for="admin-booking-date">Data</label>
+                <input id="admin-booking-date" type="date" />
+              </div>
+              <div class="field full">
+                <label>Horario livre</label>
+                <div class="slot-grid" id="admin-slot-grid"></div>
+                <input id="admin-time-input" type="hidden" />
+              </div>
+              <div class="field full">
+                <label for="admin-booking-notes">Observacoes</label>
+                <textarea id="admin-booking-notes" placeholder="Ex: cliente pediu acabamento baixo, confirmar no atendimento..."></textarea>
+              </div>
+              <div class="field full">
+                <p class="mini" id="admin-booking-plan-note">Selecione um cliente cadastrado para vincular o historico ou preencha manualmente para um cliente avulso.</p>
+              </div>
+            </div>
+            <div class="row-actions">
+              <button class="btn secondary" id="admin-booking-submit" type="button">Confirmar agendamento</button>
+              <button class="btn ghost" id="admin-booking-clear" type="button">Limpar</button>
+            </div>
+            <div class="message" id="admin-booking-message"></div>
           </div>
         </div>
 
@@ -811,7 +871,7 @@
         <div id="tab-horarios" class="tab-panel" hidden>
           <div class="admin-card">
             <h3>Horarios por barbeiro</h3>
-            <p class="mini">Clique nos horarios para ligar ou desligar. Os clientes so veem os horarios ativos e ainda livres.</p>
+            <p class="mini">Grade de 15 em 15 minutos. Clique para ligar ou desligar cada horario. O intervalo de almoco entre 12:00 e 13:00 fica bloqueado na agenda.</p>
             <div class="field" style="margin:16px 0;"><label for="schedule-barber">Barbeiro</label><select id="schedule-barber"></select></div>
             <div class="schedule-table" id="schedule-table"></div>
           </div>
@@ -853,6 +913,7 @@
       reviewableAppointments: [],
       clientTab: "login",
       selectedTime: "",
+      adminBookingSelectedTime: "",
       adminLogged: false,
       activeTab: "agenda",
       appointmentFilters: {
@@ -1250,6 +1311,7 @@
     function renderAdmin() {
       renderOverviewStats();
       renderAppointments();
+      renderAdminBooking();
       renderCustomers();
       renderPlans();
       renderReviews();
@@ -1467,6 +1529,158 @@
       });
     }
 
+    const getAdminSelectedCustomer = () => {
+      const customerId = Number($("admin-booking-customer")?.value || 0);
+      return state.customers.find((customer) => Number(customer.id) === customerId) || null;
+    };
+
+    const getAdminSelectedServices = () => state.services.filter((service) => {
+      const input = document.querySelector(`#admin-service-choice-list input[name="adminServiceIds"][value="${service.id}"]`);
+      return input && input.checked;
+    });
+
+    function updateAdminBookingSummary() {
+      const selected = getAdminSelectedServices();
+      const totalPrice = selected.reduce((sum, service) => sum + Number(service.price || 0), 0);
+      const totalDuration = selected.reduce((sum, service) => sum + Number(service.duration || 0), 0);
+      $("admin-booking-summary").textContent = selected.length
+        ? `Selecionados: ${selected.length} · ${money(totalPrice)} · ${totalDuration} min`
+        : "Escolha pelo menos um servico.";
+    }
+
+    async function loadAdminBookingAvailability(preferredTime = "") {
+      const barberId = $("admin-booking-barber").value;
+      const date = $("admin-booking-date").value;
+      const serviceIds = getAdminSelectedServices().map((service) => service.id);
+      state.adminBookingSelectedTime = "";
+      $("admin-time-input").value = "";
+      if (!barberId || !date) {
+        $("admin-slot-grid").innerHTML = '<p class="mini">Escolha barbeiro e data para ver horarios.</p>';
+        return;
+      }
+      if (!serviceIds.length) {
+        $("admin-slot-grid").innerHTML = '<p class="mini">Escolha pelo menos um servico.</p>';
+        return;
+      }
+      const payload = await fetchJson(`/api/availability?barberId=${encodeURIComponent(barberId)}&date=${encodeURIComponent(date)}&serviceIds=${encodeURIComponent(serviceIds.join(","))}`);
+      $("admin-slot-grid").innerHTML = payload.slots.length ? payload.slots.map((slot) => `
+        <button class="slot" type="button" ${slot.available ? "" : "disabled"} data-admin-time="${slot.time}">${slot.time}</button>
+      `).join("") : '<p class="mini">Esse barbeiro nao tem horarios cadastrados nessa data.</p>';
+      const activateButton = (button) => {
+        document.querySelectorAll("#admin-slot-grid .slot").forEach((item) => item.classList.remove("active"));
+        button.classList.add("active");
+        state.adminBookingSelectedTime = button.dataset.adminTime;
+        $("admin-time-input").value = state.adminBookingSelectedTime;
+      };
+      document.querySelectorAll("[data-admin-time]").forEach((button) => {
+        button.addEventListener("click", () => activateButton(button));
+      });
+      const preferredButton = preferredTime
+        ? document.querySelector(`#admin-slot-grid [data-admin-time="${preferredTime}"]:not([disabled])`)
+        : null;
+      if (preferredButton) {
+        activateButton(preferredButton);
+      }
+    }
+
+    function renderAdminBooking() {
+      if (!$("admin-booking-customer")) return;
+      const previousCustomerId = $("admin-booking-customer").value || "";
+      const previousName = $("admin-booking-name").value || "";
+      const previousPhone = $("admin-booking-phone").value || "";
+      const previousEmail = $("admin-booking-email").value || "";
+      const previousNotes = $("admin-booking-notes").value || "";
+      const previousDate = $("admin-booking-date").value || "";
+      const previousBarberId = $("admin-booking-barber").value || "";
+      const previousServiceIds = Array.from(document.querySelectorAll('#admin-service-choice-list input[name="adminServiceIds"]:checked')).map((input) => input.value);
+      const preferredTime = $("admin-time-input").value || state.adminBookingSelectedTime || "";
+      $("admin-booking-customer").innerHTML = [`<option value="">Cliente avulso</option>`].concat(
+        state.customers.map((customer) => `<option value="${customer.id}">${escapeHtml(customer.name)} · ${escapeHtml(customer.phone)}</option>`)
+      ).join("");
+      if (previousCustomerId && state.customers.some((customer) => String(customer.id) === previousCustomerId)) {
+        $("admin-booking-customer").value = previousCustomerId;
+      }
+      const selectedCustomer = getAdminSelectedCustomer();
+      const activePlan = selectedCustomer?.active_plan || null;
+      const nameInput = $("admin-booking-name");
+      const phoneInput = $("admin-booking-phone");
+      const emailInput = $("admin-booking-email");
+      if (selectedCustomer) {
+        nameInput.value = selectedCustomer.name || "";
+        phoneInput.value = selectedCustomer.phone || "";
+        emailInput.value = selectedCustomer.email || "";
+      } else {
+        nameInput.value = previousName;
+        phoneInput.value = previousPhone;
+        emailInput.value = previousEmail;
+      }
+      [nameInput, phoneInput, emailInput].forEach((input) => {
+        input.readOnly = Boolean(selectedCustomer);
+      });
+
+      $("admin-service-choice-list").innerHTML = state.services.map((service, index) => {
+        const monthlyService = isMonthlyPlanService(service);
+        const disabled = Boolean(activePlan && !monthlyService);
+        const checked = activePlan
+          ? monthlyService
+          : (previousServiceIds.length ? previousServiceIds.includes(String(service.id)) : index === 0);
+        return `
+          <label class="service-choice" style="${disabled ? "opacity:.45;cursor:not-allowed;" : ""}">
+            <input type="checkbox" name="adminServiceIds" value="${service.id}" ${checked ? "checked" : ""} ${disabled ? "disabled" : ""} />
+            <span>
+              <strong>${escapeHtml(service.name)}</strong>
+              <span>${money(service.price)} · ${escapeHtml(service.duration)} min${activePlan && monthlyService ? " · plano mensal" : ""}</span>
+            </span>
+          </label>
+        `;
+      }).join("");
+      document.querySelectorAll('#admin-service-choice-list input[name="adminServiceIds"]').forEach((input) => {
+        input.addEventListener("change", () => {
+          state.adminBookingSelectedTime = "";
+          updateAdminBookingSummary();
+          loadAdminBookingAvailability().catch((error) => setMessage($("admin-booking-message"), error.message, "err"));
+        });
+      });
+
+      const availableBarbers = activePlan && activePlan.barber_id
+        ? state.barbers.filter((barber) => String(barber.id) === String(activePlan.barber_id))
+        : state.barbers;
+      $("admin-booking-barber").innerHTML = availableBarbers.map((barber) => `<option value="${barber.id}">${escapeHtml(barber.name)}</option>`).join("");
+      const barberSelect = $("admin-booking-barber");
+      if (availableBarbers.some((barber) => String(barber.id) === previousBarberId) && !activePlan) {
+        barberSelect.value = previousBarberId;
+      } else if (availableBarbers[0]) {
+        barberSelect.value = String(availableBarbers[0].id);
+      }
+      barberSelect.disabled = Boolean(activePlan);
+
+      const today = new Date().toISOString().slice(0, 10);
+      $("admin-booking-date").min = today;
+      $("admin-booking-date").value = previousDate || today;
+      $("admin-booking-notes").value = previousNotes;
+
+      $("admin-booking-plan-note").textContent = activePlan
+        ? `Cliente com plano ativo de ${formatDateBr(activePlan.start_date)} ate ${formatDateBr(activePlan.end_date)}. Marque somente Ja tenho mensal com ${activePlan.barber_name || "o barbeiro do plano"}.`
+        : selectedCustomer
+          ? "Cliente cadastrado sem plano ativo. Pode marcar qualquer servico disponivel."
+          : "Selecione um cliente cadastrado para vincular o historico ou preencha manualmente para um cliente avulso.";
+
+      updateAdminBookingSummary();
+      loadAdminBookingAvailability(preferredTime).catch((error) => setMessage($("admin-booking-message"), error.message, "err"));
+    }
+
+    function resetAdminBookingForm() {
+      state.adminBookingSelectedTime = "";
+      $("admin-booking-customer").value = "";
+      $("admin-booking-name").value = "";
+      $("admin-booking-phone").value = "";
+      $("admin-booking-email").value = "";
+      $("admin-booking-notes").value = "";
+      $("admin-time-input").value = "";
+      setMessage($("admin-booking-message"), "", "");
+      renderAdminBooking();
+    }
+
     function bindAdminInputs() {
       document.querySelectorAll("[data-barber]").forEach((input) => {
         input.addEventListener("change", async () => {
@@ -1652,6 +1866,63 @@
     });
     $("barber-select").addEventListener("change", loadAvailability);
     $("date-input").addEventListener("change", loadAvailability);
+    $("admin-booking-customer").addEventListener("change", () => {
+      state.adminBookingSelectedTime = "";
+      if (!$("admin-booking-customer").value) {
+        $("admin-booking-name").value = "";
+        $("admin-booking-phone").value = "";
+        $("admin-booking-email").value = "";
+      }
+      renderAdminBooking();
+    });
+    $("admin-booking-barber").addEventListener("change", () => {
+      state.adminBookingSelectedTime = "";
+      loadAdminBookingAvailability().catch((error) => setMessage($("admin-booking-message"), error.message, "err"));
+    });
+    $("admin-booking-date").addEventListener("change", () => {
+      state.adminBookingSelectedTime = "";
+      loadAdminBookingAvailability().catch((error) => setMessage($("admin-booking-message"), error.message, "err"));
+    });
+    $("admin-booking-clear").addEventListener("click", () => resetAdminBookingForm());
+    $("admin-booking-submit").addEventListener("click", async () => {
+      const selectedServices = getAdminSelectedServices();
+      if (!selectedServices.length) {
+        setMessage($("admin-booking-message"), "Escolha pelo menos um servico.", "err");
+        return;
+      }
+      if (!$("admin-time-input").value) {
+        setMessage($("admin-booking-message"), "Escolha um horario livre para confirmar.", "err");
+        return;
+      }
+      setMessage($("admin-booking-message"), "Confirmando agendamento...", "");
+      try {
+        const payload = {
+          customerId: Number($("admin-booking-customer").value || 0),
+          clientName: $("admin-booking-name").value,
+          clientPhone: $("admin-booking-phone").value,
+          clientEmail: $("admin-booking-email").value,
+          notes: $("admin-booking-notes").value,
+          barberId: Number($("admin-booking-barber").value || 0),
+          date: $("admin-booking-date").value,
+          time: $("admin-time-input").value,
+          serviceIds: selectedServices.map((service) => Number(service.id)),
+          serviceId: Number(selectedServices[0]?.id || 0),
+        };
+        const response = await fetchJson("/api/admin/create-appointment", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        Object.assign(state, response);
+        renderPublic();
+        renderAdmin();
+        resetAdminBookingForm();
+        setMessage($("admin-booking-message"), `Agendamento confirmado com ${response.appointment.barber_name} em ${formatDateBr(response.appointment.date)} as ${response.appointment.time}.`, "ok");
+        setMessage($("admin-message"), "Agendamento criado pelo admin.", "ok");
+      } catch (error) {
+        setMessage($("admin-booking-message"), error.message, "err");
+        loadAdminBookingAvailability($("admin-time-input").value).catch(() => {});
+      }
+    });
 
     function renderReviews() {
       const target = $("review-list");
@@ -2140,6 +2411,7 @@
       renderOverviewStats();
       renderBarberSummaries();
       renderAppointments();
+      renderAdminBooking();
       renderCustomers();
       renderPlans();
       renderReviews();

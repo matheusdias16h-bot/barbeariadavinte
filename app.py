@@ -1613,6 +1613,10 @@ class AppHandler(BaseHTTPRequestHandler):
             if not self.require_auth():
                 return
             return self.handle_cancel_plan()
+        if parsed.path == "/api/admin/create-appointment":
+            if not self.require_auth():
+                return
+            return self.handle_admin_create_appointment()
         return self.send_error_json(HTTPStatus.NOT_FOUND, "Rota nao encontrada.")
 
     def serve_file(self, path, content_type):
@@ -1807,6 +1811,24 @@ class AppHandler(BaseHTTPRequestHandler):
         except ValueError as exc:
             return self.send_error_json(HTTPStatus.BAD_REQUEST, str(exc))
         return self.send_json(HTTPStatus.OK, read_public_data(include_admin=True))
+
+    def handle_admin_create_appointment(self):
+        payload = self.read_json_body()
+        if payload is None:
+            return
+        customer = None
+        customer_id = int(payload.get("customerId") or 0)
+        if customer_id:
+            customer = get_customer_by_id(customer_id)
+            if not customer:
+                return self.send_error_json(HTTPStatus.BAD_REQUEST, "Cliente cadastrado nao encontrado.")
+        try:
+            appointment = create_appointment(payload, customer=customer)
+        except ValueError as exc:
+            return self.send_error_json(HTTPStatus.BAD_REQUEST, str(exc))
+        response = read_public_data(include_admin=True)
+        response["appointment"] = appointment
+        return self.send_json(HTTPStatus.CREATED, response)
 
     def read_json_body(self):
         content_length = int(self.headers.get("Content-Length", "0") or "0")
