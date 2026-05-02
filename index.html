@@ -435,6 +435,142 @@
       .stat-card span { color: var(--muted); text-transform: uppercase; font-size: 0.73rem; letter-spacing: 0.08em; }
       .stat-card strong { font-size: 2rem; line-height: 1; }
       .stat-card p { color: #cbb68a; font-size: 0.88rem; }
+      .agenda-visual-shell { display: grid; gap: 18px; margin-bottom: 18px; }
+      .agenda-visual-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+      .agenda-visual-head strong { font-size: 1.4rem; }
+      .agenda-visual-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+      .agenda-nav-btn {
+        width: 38px;
+        height: 38px;
+        border-radius: 999px;
+        border: 1px solid rgba(255,255,255,0.12);
+        background: #111;
+        color: var(--ink);
+        font-size: 1.1rem;
+      }
+      .agenda-today-btn {
+        min-height: 38px;
+        padding: 0 14px;
+        border-radius: 999px;
+        border: 1px solid rgba(181,154,102,0.28);
+        background: rgba(181,154,102,0.12);
+        color: var(--gold-2);
+        font-weight: 800;
+      }
+      .agenda-week-strip { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
+      .agenda-week-day {
+        border: 1px solid rgba(255,255,255,0.08);
+        background: #0d0d0d;
+        border-radius: 6px;
+        padding: 12px 10px;
+        text-align: center;
+        color: #d7d0c5;
+      }
+      .agenda-week-day small {
+        display: block;
+        color: var(--muted);
+        text-transform: uppercase;
+        font-size: 0.7rem;
+        letter-spacing: 0.06em;
+        margin-bottom: 8px;
+      }
+      .agenda-week-day strong { font-size: 1.2rem; line-height: 1; }
+      .agenda-week-day.active {
+        background: linear-gradient(180deg, rgba(181,154,102,0.22), rgba(38,30,16,0.95));
+        border-color: rgba(181,154,102,0.45);
+        color: #fff8ea;
+      }
+      .agenda-barber-strip { display: flex; gap: 10px; flex-wrap: wrap; }
+      .agenda-barber-pill {
+        min-height: 42px;
+        padding: 0 14px;
+        border-radius: 999px;
+        border: 1px solid rgba(255,255,255,0.1);
+        background: #0f0f0f;
+        color: #d7d0c5;
+        font-weight: 700;
+      }
+      .agenda-barber-pill.active {
+        background: var(--gold);
+        border-color: var(--gold);
+        color: #111;
+      }
+      .agenda-planner {
+        position: relative;
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 8px;
+        background: linear-gradient(180deg, #101010 0%, #0a0a0a 100%);
+        overflow: hidden;
+      }
+      .agenda-planner-grid {
+        position: relative;
+        display: grid;
+        grid-template-columns: 72px 1fr;
+      }
+      .agenda-time-list,
+      .agenda-lane-grid {
+        display: grid;
+        grid-auto-rows: 26px;
+      }
+      .agenda-time-cell {
+        padding: 0 10px;
+        color: #81796d;
+        font-size: 0.75rem;
+        display: flex;
+        align-items: start;
+        justify-content: flex-end;
+        transform: translateY(-8px);
+      }
+      .agenda-lane-cell {
+        border-top: 1px solid rgba(255,255,255,0.06);
+        border-left: 1px solid rgba(255,255,255,0.06);
+      }
+      .agenda-lane-cell.lunch {
+        background: rgba(255,255,255,0.06);
+      }
+      .agenda-blocks {
+        position: absolute;
+        top: 0;
+        left: 72px;
+        right: 0;
+        bottom: 0;
+        pointer-events: none;
+      }
+      .agenda-booking-card {
+        position: absolute;
+        left: 10px;
+        right: 10px;
+        border-radius: 8px;
+        padding: 10px 12px;
+        border: 1px solid rgba(255,255,255,0.14);
+        box-shadow: 0 8px 24px rgba(0,0,0,0.24);
+        overflow: hidden;
+      }
+      .agenda-booking-card.regular {
+        background: linear-gradient(180deg, rgba(112,154,209,0.92), rgba(88,129,183,0.94));
+        color: #0d1520;
+      }
+      .agenda-booking-card.plan {
+        background: linear-gradient(180deg, rgba(191,144,214,0.92), rgba(163,118,186,0.94));
+        color: #211226;
+      }
+      .agenda-booking-card strong {
+        display: block;
+        font-size: 0.78rem;
+        margin-bottom: 6px;
+      }
+      .agenda-booking-card span {
+        display: block;
+        font-weight: 800;
+        line-height: 1.35;
+      }
+      .agenda-empty {
+        padding: 18px;
+        border: 1px dashed rgba(255,255,255,0.1);
+        border-radius: 6px;
+        background: rgba(255,255,255,0.02);
+        color: var(--muted);
+      }
       .schedule-table { display: grid; gap: 10px; }
     .day-row { display: grid; grid-template-columns: 120px 1fr; gap: 10px; align-items: start; }
     .chips { display: flex; flex-wrap: wrap; gap: 7px; }
@@ -447,6 +583,7 @@
       .hero-grid, .booking-shell { grid-template-columns: 1fr; }
       .info-card { max-width: 420px; }
       .quick, .services, .barbers, .proof, .admin-grid, .stats-grid { grid-template-columns: repeat(2, 1fr); }
+      .agenda-week-strip { grid-template-columns: repeat(4, minmax(0, 1fr)); }
       .client-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
     @media (max-width: 640px) {
@@ -463,6 +600,10 @@
       .slot-grid { grid-template-columns: repeat(3, 1fr); }
       .service-choice-grid { grid-template-columns: 1fr; }
       .day-row { grid-template-columns: 1fr; }
+      .agenda-week-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .agenda-planner-grid { grid-template-columns: 56px 1fr; }
+      .agenda-blocks { left: 56px; }
+      .agenda-time-cell { padding-right: 6px; }
     }
   </style>
 </head>
@@ -703,6 +844,30 @@
         <div id="tab-agenda" class="tab-panel">
           <div class="admin-card">
             <div class="stats-grid" id="overview-stats"></div>
+            <div class="agenda-visual-shell">
+              <div class="agenda-visual-head">
+                <div>
+                  <h3>Agenda visual</h3>
+                  <p class="mini">Semana por barbeiro com blocos reais de horario e duracao.</p>
+                </div>
+                <div class="agenda-visual-actions">
+                  <button class="agenda-nav-btn" id="agenda-week-prev" type="button" aria-label="Semana anterior">‹</button>
+                  <strong id="agenda-visual-title">Agenda</strong>
+                  <button class="agenda-nav-btn" id="agenda-week-next" type="button" aria-label="Próxima semana">›</button>
+                  <button class="agenda-today-btn" id="agenda-week-today" type="button">Hoje</button>
+                </div>
+              </div>
+              <div class="agenda-week-strip" id="agenda-week-strip"></div>
+              <div class="agenda-barber-strip" id="agenda-barber-strip"></div>
+              <div class="agenda-planner">
+                <div class="agenda-planner-grid">
+                  <div class="agenda-time-list" id="agenda-time-list"></div>
+                  <div class="agenda-lane-grid" id="agenda-lane-grid"></div>
+                </div>
+                <div class="agenda-blocks" id="agenda-visual-blocks"></div>
+              </div>
+              <div class="agenda-empty" id="agenda-visual-empty" hidden>Nenhum agendamento ativo para esse dia com esse barbeiro.</div>
+            </div>
             <div class="field-grid" style="margin-bottom:16px;">
               <div class="field">
                 <label for="agenda-filter-barber">Filtrar barbeiro</label>
@@ -920,6 +1085,10 @@
         barber: "",
         date: "",
       },
+      agendaView: {
+        date: "",
+        barberId: "",
+      },
     };
     const planCatalog = [
       { name: "Plano corte", price: 100 },
@@ -1060,6 +1229,47 @@
       const nextMonthDate = new Date(year, month, Math.min(day, daysInTargetMonth));
       return nextMonthDate.toISOString().slice(0, 10);
     }
+
+    function minutesFromTimeText(timeText) {
+      const [hours, minutes] = String(timeText || "00:00").split(":").map(Number);
+      return (hours * 60) + minutes;
+    }
+
+    function addDays(date, amount) {
+      const copy = new Date(date);
+      copy.setDate(copy.getDate() + amount);
+      return copy;
+    }
+
+    function startOfWeek(date) {
+      const copy = new Date(date);
+      const day = copy.getDay();
+      const diff = day === 0 ? -6 : 1 - day;
+      copy.setHours(0, 0, 0, 0);
+      copy.setDate(copy.getDate() + diff);
+      return copy;
+    }
+
+    function formatMonthYear(date) {
+      const label = new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric" }).format(date).replace(" de ", " ");
+      return label.charAt(0).toUpperCase() + label.slice(1);
+    }
+
+    function formatWeekdayLabel(date) {
+      return new Intl.DateTimeFormat("pt-BR", { weekday: "short" }).format(date).replace(".", "");
+    }
+
+    function buildAgendaTimelineTimes() {
+      const timeline = [];
+      for (let hour = 9; hour < 20; hour += 1) {
+        for (let minute = 0; minute < 60; minute += 15) {
+          timeline.push(`${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`);
+        }
+      }
+      return timeline;
+    }
+
+    const agendaTimelineTimes = buildAgendaTimelineTimes();
 
     function setClientTab(tab) {
       state.clientTab = tab;
@@ -1310,6 +1520,7 @@
 
     function renderAdmin() {
       renderOverviewStats();
+      renderAgendaVisual();
       renderAppointments();
       renderAdminBooking();
       renderCustomers();
@@ -1335,6 +1546,94 @@
         if (Number.isNaN(startsAt.getTime())) return false;
         return startsAt >= now;
       });
+    }
+
+    function ensureAgendaViewDefaults() {
+      const today = new Date().toISOString().slice(0, 10);
+      if (!state.agendaView.date) {
+        state.agendaView.date = state.appointmentFilters.date || today;
+      }
+      if (!state.agendaView.barberId) {
+        const barberFromFilter = state.barbers.find((barber) => barber.name === state.appointmentFilters.barber);
+        state.agendaView.barberId = String(barberFromFilter?.id || state.barbers[0]?.id || "");
+      }
+      const selectedBarber = state.barbers.find((barber) => String(barber.id) === String(state.agendaView.barberId));
+      state.appointmentFilters.date = state.agendaView.date;
+      state.appointmentFilters.barber = selectedBarber?.name || "";
+    }
+
+    function getAgendaVisualAppointments() {
+      ensureAgendaViewDefaults();
+      return getActiveAgendaAppointments().filter((item) =>
+        item.date === state.agendaView.date
+        && String(item.barber_id) === String(state.agendaView.barberId)
+      );
+    }
+
+    function renderAgendaVisual() {
+      if (!$("agenda-week-strip")) return;
+      ensureAgendaViewDefaults();
+      const selectedDate = new Date(`${state.agendaView.date}T00:00:00`);
+      const weekStart = startOfWeek(selectedDate);
+      $("agenda-visual-title").textContent = formatMonthYear(selectedDate);
+      $("agenda-week-strip").innerHTML = Array.from({ length: 7 }, (_, offset) => {
+        const date = addDays(weekStart, offset);
+        const iso = date.toISOString().slice(0, 10);
+        return `
+          <button class="agenda-week-day ${iso === state.agendaView.date ? "active" : ""}" data-agenda-date="${iso}" type="button">
+            <small>${escapeHtml(formatWeekdayLabel(date))}</small>
+            <strong>${escapeHtml(String(date.getDate()).padStart(2, "0"))}</strong>
+          </button>
+        `;
+      }).join("");
+      document.querySelectorAll("[data-agenda-date]").forEach((button) => {
+        button.addEventListener("click", () => {
+          state.agendaView.date = button.dataset.agendaDate;
+          state.appointmentFilters.date = state.agendaView.date;
+          renderAgendaVisual();
+          renderAppointments();
+        });
+      });
+
+      $("agenda-barber-strip").innerHTML = state.barbers.map((barber) => `
+        <button class="agenda-barber-pill ${String(barber.id) === String(state.agendaView.barberId) ? "active" : ""}" data-agenda-barber="${barber.id}" type="button">${escapeHtml(barber.name)}</button>
+      `).join("");
+      document.querySelectorAll("[data-agenda-barber]").forEach((button) => {
+        button.addEventListener("click", () => {
+          state.agendaView.barberId = button.dataset.agendaBarber;
+          const selectedBarber = state.barbers.find((barber) => String(barber.id) === String(state.agendaView.barberId));
+          state.appointmentFilters.barber = selectedBarber?.name || "";
+          renderAgendaVisual();
+          renderAppointments();
+        });
+      });
+
+      $("agenda-time-list").innerHTML = agendaTimelineTimes.map((time) => `
+        <div class="agenda-time-cell">${time.endsWith(":00") ? escapeHtml(time) : ""}</div>
+      `).join("");
+      $("agenda-lane-grid").innerHTML = agendaTimelineTimes.map((time) => `
+        <div class="agenda-lane-cell ${minutesFromTimeText(time) >= minutesFromTimeText("12:00") && minutesFromTimeText(time) < minutesFromTimeText("13:00") ? "lunch" : ""}"></div>
+      `).join("");
+
+      const plannerRowHeight = 26;
+      const openingMinutes = minutesFromTimeText("09:00");
+      const appointments = getAgendaVisualAppointments();
+      $("agenda-visual-blocks").innerHTML = appointments.map((item) => {
+        const startMinutes = minutesFromTimeText(item.time);
+        const duration = Number(item.service_duration || 30);
+        const top = ((startMinutes - openingMinutes) / 15) * plannerRowHeight;
+        const height = Math.max(((duration / 15) * plannerRowHeight) - 4, plannerRowHeight - 4);
+        const endMinutes = startMinutes + duration;
+        const endHour = String(Math.floor(endMinutes / 60)).padStart(2, "0");
+        const endMinute = String(endMinutes % 60).padStart(2, "0");
+        return `
+          <article class="agenda-booking-card ${item.plan_booking ? "plan" : "regular"}" style="top:${top + 2}px;height:${height}px;">
+            <strong>${escapeHtml(item.time)} - ${escapeHtml(`${endHour}:${endMinute}`)}</strong>
+            <span>${escapeHtml(item.service_name)} - ${escapeHtml(item.client_name)}</span>
+          </article>
+        `;
+      }).join("");
+      $("agenda-visual-empty").hidden = appointments.length > 0;
     }
 
     function renderOverviewStats() {
@@ -1364,6 +1663,7 @@
     }
 
     function renderAppointments() {
+      ensureAgendaViewDefaults();
       const barberFilter = $("agenda-filter-barber");
       const dateFilter = $("agenda-filter-date");
       if (barberFilter) {
@@ -1401,6 +1701,11 @@
         barberFilter.dataset.bound = "true";
         barberFilter.addEventListener("change", () => {
           state.appointmentFilters.barber = barberFilter.value;
+          const selectedBarber = state.barbers.find((barber) => barber.name === barberFilter.value);
+          if (selectedBarber) {
+            state.agendaView.barberId = String(selectedBarber.id);
+          }
+          renderAgendaVisual();
           renderAppointments();
         });
       }
@@ -1408,6 +1713,10 @@
         dateFilter.dataset.bound = "true";
         dateFilter.addEventListener("change", () => {
           state.appointmentFilters.date = dateFilter.value;
+          if (dateFilter.value) {
+            state.agendaView.date = dateFilter.value;
+          }
+          renderAgendaVisual();
           renderAppointments();
         });
       }
@@ -1724,6 +2033,28 @@
       await saveAdmin();
     });
     $("schedule-barber").addEventListener("change", renderSchedule);
+    $("agenda-week-prev").addEventListener("click", () => {
+      ensureAgendaViewDefaults();
+      const baseDate = new Date(`${state.agendaView.date}T00:00:00`);
+      state.agendaView.date = addDays(baseDate, -7).toISOString().slice(0, 10);
+      state.appointmentFilters.date = state.agendaView.date;
+      renderAgendaVisual();
+      renderAppointments();
+    });
+    $("agenda-week-next").addEventListener("click", () => {
+      ensureAgendaViewDefaults();
+      const baseDate = new Date(`${state.agendaView.date}T00:00:00`);
+      state.agendaView.date = addDays(baseDate, 7).toISOString().slice(0, 10);
+      state.appointmentFilters.date = state.agendaView.date;
+      renderAgendaVisual();
+      renderAppointments();
+    });
+    $("agenda-week-today").addEventListener("click", () => {
+      state.agendaView.date = new Date().toISOString().slice(0, 10);
+      state.appointmentFilters.date = state.agendaView.date;
+      renderAgendaVisual();
+      renderAppointments();
+    });
     $("tabs").addEventListener("click", (event) => {
       if (event.target.dataset.tab) {
         state.activeTab = event.target.dataset.tab;
@@ -2410,6 +2741,7 @@
     renderAdmin = function () {
       renderOverviewStats();
       renderBarberSummaries();
+      renderAgendaVisual();
       renderAppointments();
       renderAdminBooking();
       renderCustomers();
