@@ -334,6 +334,7 @@ def init_db():
         ensure_column(conn, "appointments", "plan_booking", "INTEGER NOT NULL DEFAULT 0")
         ensure_column(conn, "appointments", "reminder_sent_at", "TEXT NOT NULL DEFAULT ''")
         ensure_column(conn, "appointments", "cancel_reason", "TEXT NOT NULL DEFAULT ''")
+        ensure_column(conn, "appointments", "cancel_whatsapp_sent_at", "TEXT NOT NULL DEFAULT ''")
         ensure_column(conn, "monthly_plans", "barber_id", "INTEGER")
         ensure_column(conn, "monthly_plans", "plan_name", "TEXT NOT NULL DEFAULT ''")
         ensure_column(conn, "monthly_plans", "plan_price", "REAL NOT NULL DEFAULT 0")
@@ -382,6 +383,19 @@ def init_db():
                 date TEXT PRIMARY KEY,
                 note TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS blocked_barber_dates (
+                id INTEGER PRIMARY KEY,
+                barber_id INTEGER NOT NULL,
+                date TEXT NOT NULL,
+                note TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                UNIQUE(barber_id, date),
+                FOREIGN KEY (barber_id) REFERENCES barbers(id) ON DELETE CASCADE
             )
             """
         )
@@ -436,12 +450,41 @@ def read_blocked_dates(conn):
     return [dict(row) for row in rows]
 
 
+def read_blocked_barber_dates(conn):
+    rows = conn.execute(
+        """
+        SELECT bbd.id, bbd.barber_id, bbd.date, bbd.note, bbd.created_at,
+               b.name AS barber_name
+        FROM blocked_barber_dates bbd
+        JOIN barbers b ON b.id = bbd.barber_id
+        ORDER BY bbd.date ASC, b.name ASC
+        """
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
 def get_blocked_date_entry(conn, date_text):
     if not date_text:
         return None
     row = conn.execute(
         "SELECT date, note, created_at FROM blocked_dates WHERE date = ?",
         (date_text,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def get_blocked_barber_entry(conn, barber_id, date_text):
+    if not barber_id or not date_text:
+        return None
+    row = conn.execute(
+        """
+        SELECT bbd.id, bbd.barber_id, bbd.date, bbd.note, bbd.created_at,
+               b.name AS barber_name
+        FROM blocked_barber_dates bbd
+        JOIN barbers b ON b.id = bbd.barber_id
+        WHERE bbd.barber_id = ? AND bbd.date = ?
+        """,
+        (barber_id, date_text),
     ).fetchone()
     return dict(row) if row else None
 
@@ -481,6 +524,41 @@ def read_confirmed_appointments_for_date(conn, date_text):
     return [dict(row) for row in rows]
 
 
+def read_confirmed_appointments_for_barber_date(conn, barber_id, date_text):
+    rows = conn.execute(
+        """
+        SELECT a.id, a.client_name, a.client_phone, a.client_email, a.notes, a.date, a.time, a.created_at,
+               a.customer_id, a.plan_booking, a.barber_id,
+               COALESCE((
+                   SELECT GROUP_CONCAT(s2.name, ' + ')
+                   FROM appointment_services aps
+                   JOIN services s2 ON s2.id = aps.service_id
+                   WHERE aps.appointment_id = a.id
+               ), s.name) AS service_name,
+               COALESCE((
+                   SELECT SUM(s2.price)
+                   FROM appointment_services aps
+                   JOIN services s2 ON s2.id = aps.service_id
+                   WHERE aps.appointment_id = a.id
+               ), s.price) AS service_price,
+               COALESCE((
+                   SELECT SUM(s2.duration)
+                   FROM appointment_services aps
+                   JOIN services s2 ON s2.id = aps.service_id
+                   WHERE aps.appointment_id = a.id
+               ), s.duration) AS service_duration,
+               b.name AS barber_name, b.email AS barber_email
+        FROM appointments a
+        JOIN services s ON s.id = a.service_id
+        JOIN barbers b ON b.id = a.barber_id
+        WHERE a.barber_id = ? AND a.date = ? AND a.status = 'confirmed'
+        ORDER BY a.time, a.id
+        """,
+        (barber_id, date_text),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
 def notify_customer_cancellation(conn, appointment, note=""):
     recipient = appointment.get("client_email", "").strip()
     if not recipient:
@@ -505,7 +583,30 @@ def cancel_appointments_for_blocked_date(conn, date_text, note=""):
     appointments = read_confirmed_appointments_for_date(conn, date_text)
     for appointment in appointments:
         conn.execute(
-            "UPDATE appointments SET status = 'canceled', cancel_reason = 'blocked_date' WHERE id = ?",
+            """
+            UPDATE appointments
+            SET status = 'canceled',
+                cancel_reason = 'blocked_date',
+                cancel_whatsapp_sent_at = ''
+            WHERE id = ?
+            """,
+            (appointment["id"],),
+        )
+        notify_customer_cancellation(conn, appointment, note)
+    return appointments
+
+
+def cancel_appointments_for_blocked_barber_date(conn, barber_id, date_text, note=""):
+    appointments = read_confirmed_appointments_for_barber_date(conn, barber_id, date_text)
+    for appointment in appointments:
+        conn.execute(
+            """
+            UPDATE appointments
+            SET status = 'canceled',
+                cancel_reason = 'blocked_barber_date',
+                cancel_whatsapp_sent_at = ''
+            WHERE id = ?
+            """,
             (appointment["id"],),
         )
         notify_customer_cancellation(conn, appointment, note)
@@ -532,6 +633,40 @@ def set_blocked_date(date_text, blocked, note=""):
             cancel_appointments_for_blocked_date(conn, date_text, str(note or "").strip())
         else:
             conn.execute("DELETE FROM blocked_dates WHERE date = ?", (date_text,))
+
+
+def set_blocked_barber_date(barber_id, date_text, blocked, note=""):
+    if not barber_id:
+        raise ValueError("Escolha o barbeiro que nao vai funcionar.")
+    if not date_text:
+        raise ValueError("Escolha a data que deseja bloquear.")
+    try:
+        barber_id = int(barber_id)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Barbeiro invalido para bloqueio.") from exc
+    try:
+        datetime.strptime(date_text, "%Y-%m-%d")
+    except ValueError as exc:
+        raise ValueError("Data invalida para bloqueio.") from exc
+    with db_connection() as conn:
+        barber_exists = conn.execute("SELECT id FROM barbers WHERE id = ?", (barber_id,)).fetchone()
+        if not barber_exists:
+            raise ValueError("Barbeiro nao encontrado.")
+        if blocked:
+            conn.execute(
+                """
+                INSERT INTO blocked_barber_dates (barber_id, date, note, created_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(barber_id, date) DO UPDATE SET note = excluded.note
+                """,
+                (barber_id, date_text, str(note or "").strip(), datetime.now().strftime("%d/%m/%Y, %H:%M")),
+            )
+            cancel_appointments_for_blocked_barber_date(conn, barber_id, date_text, str(note or "").strip())
+        else:
+            conn.execute(
+                "DELETE FROM blocked_barber_dates WHERE barber_id = ? AND date = ?",
+                (barber_id, date_text),
+            )
 
 
 def read_public_data(include_admin=False):
@@ -569,6 +704,7 @@ def read_public_data(include_admin=False):
             "barbers": barbers,
             "reviews": read_barber_reviews(conn)[:8],
             "blockedDates": read_blocked_dates(conn),
+            "blockedBarberDates": read_blocked_barber_dates(conn),
         }
         if include_admin:
             payload["services"] = [
@@ -599,11 +735,13 @@ def read_public_data(include_admin=False):
 
 def read_appointments(conn):
     ensure_column(conn, "appointments", "cancel_reason", "TEXT NOT NULL DEFAULT ''")
+    ensure_column(conn, "appointments", "cancel_whatsapp_sent_at", "TEXT NOT NULL DEFAULT ''")
     rows = conn.execute(
         """
         SELECT a.id, a.client_name, a.client_phone, a.client_email, a.notes, a.date, a.time,
                a.status, a.created_at, a.customer_id, a.plan_booking, a.barber_id,
                COALESCE(a.cancel_reason, '') AS cancel_reason,
+               COALESCE(a.cancel_whatsapp_sent_at, '') AS cancel_whatsapp_sent_at,
                COALESCE((
                    SELECT GROUP_CONCAT(s2.name, ' + ')
                    FROM appointment_services aps
@@ -917,6 +1055,13 @@ def get_availability_payload(barber_id, date_text, service_ids=None):
             message = "Nao vamos funcionar nessa data."
             if note:
                 message = f"Nao vamos funcionar nessa data. Motivo: {note}"
+            return {"slots": [], "blocked": True, "message": message}
+        blocked_barber_entry = get_blocked_barber_entry(conn, barber_id, date_text)
+        if blocked_barber_entry:
+            note = str(blocked_barber_entry.get("note") or "").strip()
+            message = f"{blocked_barber_entry['barber_name']} nao vai funcionar nessa data."
+            if note:
+                message = f"{blocked_barber_entry['barber_name']} nao vai funcionar nessa data. Motivo: {note}"
             return {"slots": [], "blocked": True, "message": message}
         selected_services = get_selected_service_rows(conn, service_ids or [])
         required_duration = sum(int(row["duration"]) for row in selected_services) or 30
@@ -1758,6 +1903,14 @@ class AppHandler(BaseHTTPRequestHandler):
             if not self.require_auth():
                 return
             return self.handle_blocked_date()
+        if parsed.path == "/api/admin/blocked-barber-date":
+            if not self.require_auth():
+                return
+            return self.handle_blocked_barber_date()
+        if parsed.path == "/api/admin/cancel-whatsapp-sent":
+            if not self.require_auth():
+                return
+            return self.handle_cancel_whatsapp_sent()
         if parsed.path == "/api/admin/create-appointment":
             if not self.require_auth():
                 return
@@ -1934,14 +2087,19 @@ class AppHandler(BaseHTTPRequestHandler):
         if status not in {"confirmed", "canceled", "done"}:
             return self.send_error_json(HTTPStatus.BAD_REQUEST, "Status invalido.")
         with db_connection() as conn:
-            appointment = conn.execute("SELECT id, date FROM appointments WHERE id = ?", (appointment_id,)).fetchone()
+            appointment = conn.execute(
+                "SELECT id, date, barber_id FROM appointments WHERE id = ?",
+                (appointment_id,),
+            ).fetchone()
             if not appointment:
                 return self.send_error_json(HTTPStatus.BAD_REQUEST, "Agendamento nao encontrado.")
             if status == "confirmed" and get_blocked_date_entry(conn, appointment["date"]):
                 return self.send_error_json(HTTPStatus.BAD_REQUEST, "Esse dia esta bloqueado e nao pode voltar a ficar confirmado.")
+            if status == "confirmed" and get_blocked_barber_entry(conn, appointment["barber_id"], appointment["date"]):
+                return self.send_error_json(HTTPStatus.BAD_REQUEST, "Esse barbeiro esta bloqueado nessa data e nao pode voltar a ficar confirmado.")
             cancel_reason = "manual" if status == "canceled" else ""
             conn.execute(
-                "UPDATE appointments SET status = ?, cancel_reason = ? WHERE id = ?",
+                "UPDATE appointments SET status = ?, cancel_reason = ?, cancel_whatsapp_sent_at = '' WHERE id = ?",
                 (status, cancel_reason, appointment_id),
             )
         return self.send_json(HTTPStatus.OK, read_public_data(include_admin=True))
@@ -1978,6 +2136,47 @@ class AppHandler(BaseHTTPRequestHandler):
             )
         except ValueError as exc:
             return self.send_error_json(HTTPStatus.BAD_REQUEST, str(exc))
+        return self.send_json(HTTPStatus.OK, read_public_data(include_admin=True))
+
+    def handle_blocked_barber_date(self):
+        payload = self.read_json_body()
+        if payload is None:
+            return
+        try:
+            set_blocked_barber_date(
+                int(payload.get("barberId") or 0),
+                str(payload.get("date", "")).strip(),
+                bool(payload.get("blocked")),
+                str(payload.get("note", "")).strip(),
+            )
+        except ValueError as exc:
+            return self.send_error_json(HTTPStatus.BAD_REQUEST, str(exc))
+        return self.send_json(HTTPStatus.OK, read_public_data(include_admin=True))
+
+    def handle_cancel_whatsapp_sent(self):
+        payload = self.read_json_body()
+        if payload is None:
+            return
+        appointment_id = int(payload.get("id") or 0)
+        if not appointment_id:
+            return self.send_error_json(HTTPStatus.BAD_REQUEST, "Agendamento invalido.")
+        with db_connection() as conn:
+            appointment = conn.execute(
+                """
+                SELECT id
+                FROM appointments
+                WHERE id = ?
+                  AND status = 'canceled'
+                  AND cancel_reason IN ('blocked_date', 'blocked_barber_date')
+                """,
+                (appointment_id,),
+            ).fetchone()
+            if not appointment:
+                return self.send_error_json(HTTPStatus.BAD_REQUEST, "Agendamento nao encontrado para esse aviso.")
+            conn.execute(
+                "UPDATE appointments SET cancel_whatsapp_sent_at = ? WHERE id = ?",
+                (datetime.now().strftime("%d/%m/%Y, %H:%M"), appointment_id),
+            )
         return self.send_json(HTTPStatus.OK, read_public_data(include_admin=True))
 
     def handle_admin_create_appointment(self):

@@ -1084,6 +1084,34 @@
               <div class="message" id="blocked-date-message"></div>
               <div class="blocked-date-list" id="blocked-date-list"></div>
             </div>
+            <div class="blocked-date-card" style="margin-top:16px;">
+              <div>
+                <h3>Bloquear barbeiro por dia</h3>
+                <p class="mini">Use para fechar a agenda de um barbeiro especifico em uma data. Se houver horario confirmado, ele sera cancelado e o cliente sera avisado.</p>
+              </div>
+              <div class="field-grid">
+                <div class="field">
+                  <label for="blocked-barber-date-input">Data</label>
+                  <input id="blocked-barber-date-input" type="date" />
+                </div>
+                <div class="field">
+                  <label for="blocked-barber-select">Barbeiro</label>
+                  <select id="blocked-barber-select"></select>
+                </div>
+                <div class="field">
+                  <label class="checkbox-line"><input id="blocked-barber-toggle" type="checkbox" /> <span>Esse barbeiro nao vai funcionar hoje</span></label>
+                </div>
+                <div class="field full">
+                  <label for="blocked-barber-note">Observacao</label>
+                  <input id="blocked-barber-note" type="text" placeholder="Ex: folga, compromisso, curso..." />
+                </div>
+              </div>
+              <div class="row-actions">
+                <button class="btn secondary" id="blocked-barber-save" type="button">Salvar bloqueio do barbeiro</button>
+              </div>
+              <div class="message" id="blocked-barber-message"></div>
+              <div class="blocked-date-list" id="blocked-barber-list"></div>
+            </div>
           </div>
         </div>
 
@@ -1119,6 +1147,7 @@
       reviews: [],
       emailOutbox: [],
       blockedDates: [],
+      blockedBarberDates: [],
       customerLogged: false,
       customer: null,
       reviewableAppointments: [],
@@ -1285,6 +1314,41 @@
 
     function getBlockedDateEntry(dateText) {
       return (state.blockedDates || []).find((item) => item.date === dateText) || null;
+    }
+
+    function getBlockedBarberEntry(dateText, barberId) {
+      return (state.blockedBarberDates || []).find((item) => item.date === dateText && String(item.barber_id) === String(barberId || "")) || null;
+    }
+
+    function buildBlockedAppointmentMessage(appointment, note) {
+      return `Ola, ${appointment.client_name}! Precisamos cancelar o seu horario na Barbearia da Vinte do dia ${formatDateBr(appointment.date)} as ${appointment.time} com ${appointment.barber_name}.${note ? ` Motivo: ${note}.` : ""} Me chama aqui para te ajudar a remarcar no melhor horario.`;
+    }
+
+    function renderBlockedAppointmentContacts(appointments, note, emptyMessage, messageTargetId) {
+      if (!appointments.length) {
+        return `<p class="mini">${escapeHtml(emptyMessage)}</p>`;
+      }
+      const pendingContacts = appointments.filter((appointment) => !appointment.cancel_whatsapp_sent_at);
+      if (!pendingContacts.length) {
+        return '<p class="mini">Todos os clientes dessa lista ja receberam contato no WhatsApp.</p>';
+      }
+      return `
+        <div class="blocked-date-list" style="margin-top:10px;">
+          ${pendingContacts.map((appointment) => {
+            const whatsappHref = clientWhatsappUrl(appointment.client_phone, buildBlockedAppointmentMessage(appointment, note));
+            return `
+              <div class="blocked-date-item" style="margin-top:8px;">
+                <div>
+                  <strong>${escapeHtml(appointment.client_name)}</strong>
+                  <p class="mini">${escapeHtml(appointment.time)} - ${escapeHtml(appointment.service_name)} com ${escapeHtml(appointment.barber_name)}</p>
+                  <p class="mini">${escapeHtml(appointment.client_phone)}${appointment.client_email ? ` - ${escapeHtml(appointment.client_email)}` : ""}</p>
+                </div>
+                ${appointment.client_phone ? `<button class="btn ghost" type="button" data-cancel-whatsapp="${appointment.id}" data-whatsapp-href="${escapeHtml(whatsappHref)}" data-contact-message-target="${messageTargetId}">WhatsApp</button>` : ""}
+              </div>
+            `;
+          }).join("")}
+        </div>
+      `;
     }
 
     function minutesFromTimeText(timeText) {
@@ -1967,6 +2031,154 @@
       });
     }
 
+    function renderBlockedDates() {
+      if (!$("blocked-date-input")) return;
+      const today = new Date().toISOString().slice(0, 10);
+      if (!$("blocked-date-input").value) {
+        $("blocked-date-input").value = today;
+      }
+      $("blocked-date-input").min = today;
+      const selectedDate = $("blocked-date-input").value;
+      const entry = getBlockedDateEntry(selectedDate);
+      $("blocked-date-toggle").checked = Boolean(entry);
+      $("blocked-date-note").value = entry?.note || "";
+      $("blocked-date-list").innerHTML = (state.blockedDates || []).length
+        ? state.blockedDates.map((item) => `
+            <div class="blocked-date-item">
+              <div>
+                <strong>${escapeHtml(formatDateBr(item.date))}</strong>
+                <p class="mini">${escapeHtml(item.note || "Dia fechado sem observacao.")}</p>
+                ${renderBlockedAppointmentContacts(
+                  (state.appointments || []).filter((appointment) =>
+                    appointment.date === item.date
+                    && appointment.status === "canceled"
+                    && appointment.cancel_reason === "blocked_date"
+                  ),
+                  item.note || "",
+                  "Nenhum agendamento confirmado precisou ser cancelado nessa data.",
+                  "blocked-date-message",
+                )}
+              </div>
+              <button class="btn ghost" type="button" data-unblock-date="${item.date}">Liberar dia</button>
+            </div>
+          `).join("")
+        : '<p class="mini">Nenhum dia inteiro bloqueado.</p>';
+      bindBlockedAdminActions();
+    }
+
+    function renderBlockedBarberDates() {
+      if (!$("blocked-barber-date-input") || !$("blocked-barber-select")) return;
+      const today = new Date().toISOString().slice(0, 10);
+      if (!$("blocked-barber-date-input").value) {
+        $("blocked-barber-date-input").value = today;
+      }
+      $("blocked-barber-date-input").min = today;
+      const currentBarberId = $("blocked-barber-select").value;
+      $("blocked-barber-select").innerHTML = (state.barbers || []).length
+        ? state.barbers.map((barber) => `<option value="${barber.id}">${escapeHtml(barber.name)}</option>`).join("")
+        : '<option value="">Sem barbeiros</option>';
+      if (currentBarberId) {
+        $("blocked-barber-select").value = currentBarberId;
+      }
+      if (!$("blocked-barber-select").value && (state.barbers || []).length) {
+        $("blocked-barber-select").value = String(state.barbers[0].id);
+      }
+      const selectedDate = $("blocked-barber-date-input").value;
+      const selectedBarberId = $("blocked-barber-select").value;
+      const entry = getBlockedBarberEntry(selectedDate, selectedBarberId);
+      $("blocked-barber-toggle").checked = Boolean(entry);
+      $("blocked-barber-note").value = entry?.note || "";
+      $("blocked-barber-list").innerHTML = (state.blockedBarberDates || []).length
+        ? state.blockedBarberDates.map((item) => `
+            <div class="blocked-date-item">
+              <div>
+                <strong>${escapeHtml(formatDateBr(item.date))} - ${escapeHtml(item.barber_name)}</strong>
+                <p class="mini">${escapeHtml(item.note || "Agenda fechada sem observacao.")}</p>
+                ${renderBlockedAppointmentContacts(
+                  (state.appointments || []).filter((appointment) =>
+                    appointment.date === item.date
+                    && String(appointment.barber_id) === String(item.barber_id)
+                    && appointment.status === "canceled"
+                    && appointment.cancel_reason === "blocked_barber_date"
+                  ),
+                  item.note || "",
+                  "Nenhum agendamento confirmado precisou ser cancelado para esse barbeiro nessa data.",
+                  "blocked-barber-message",
+                )}
+              </div>
+              <button class="btn ghost" type="button" data-unblock-barber-date="${item.date}" data-unblock-barber-id="${item.barber_id}">Liberar barbeiro nesse dia</button>
+            </div>
+          `).join("")
+        : '<p class="mini">Nenhum barbeiro bloqueado por data.</p>';
+      bindBlockedAdminActions();
+    }
+
+    function bindBlockedAdminActions() {
+      document.querySelectorAll("[data-unblock-date]").forEach((button) => {
+        button.onclick = async () => {
+          try {
+            const payload = await fetchJson("/api/admin/blocked-date", {
+              method: "POST",
+              body: JSON.stringify({ date: button.dataset.unblockDate, blocked: false, note: "" }),
+            });
+            Object.assign(state, payload);
+            renderPublic();
+            renderAdmin();
+            setMessage($("blocked-date-message"), "Dia liberado novamente.", "ok");
+          } catch (error) {
+            setMessage($("blocked-date-message"), error.message, "err");
+          }
+        };
+      });
+      document.querySelectorAll("[data-unblock-barber-date]").forEach((button) => {
+        button.onclick = async () => {
+          try {
+            const payload = await fetchJson("/api/admin/blocked-barber-date", {
+              method: "POST",
+              body: JSON.stringify({
+                date: button.dataset.unblockBarberDate,
+                barberId: button.dataset.unblockBarberId,
+                blocked: false,
+                note: "",
+              }),
+            });
+            Object.assign(state, payload);
+            renderPublic();
+            renderAdmin();
+            setMessage($("blocked-barber-message"), "Bloqueio do barbeiro removido com sucesso.", "ok");
+          } catch (error) {
+            setMessage($("blocked-barber-message"), error.message, "err");
+          }
+        };
+      });
+      document.querySelectorAll("[data-cancel-whatsapp]").forEach((button) => {
+        button.onclick = async () => {
+          const href = button.dataset.whatsappHref || "#";
+          if (href !== "#") {
+            window.open(href, "_blank", "noopener,noreferrer");
+          }
+          try {
+            const payload = await fetchJson("/api/admin/cancel-whatsapp-sent", {
+              method: "POST",
+              body: JSON.stringify({ id: button.dataset.cancelWhatsapp }),
+            });
+            Object.assign(state, payload);
+            renderPublic();
+            renderAdmin();
+            const target = $(button.dataset.contactMessageTarget || "");
+            if (target) {
+              setMessage(target, "Contato por WhatsApp marcado e removido da lista pendente.", "ok");
+            }
+          } catch (error) {
+            const target = $(button.dataset.contactMessageTarget || "");
+            if (target) {
+              setMessage(target, error.message, "err");
+            }
+          }
+        };
+      });
+    }
+
     const getAdminSelectedCustomer = () => {
       const customerId = Number($("admin-booking-customer")?.value || 0);
       return state.customers.find((customer) => Number(customer.id) === customerId) || null;
@@ -2183,6 +2395,27 @@
         setMessage($("blocked-date-message"), $("blocked-date-toggle").checked ? "Dia bloqueado. Horarios confirmados dessa data foram cancelados e os clientes receberam aviso por e-mail." : "Dia liberado com sucesso.", "ok");
       } catch (error) {
         setMessage($("blocked-date-message"), error.message, "err");
+      }
+    });
+    $("blocked-barber-date-input").addEventListener("change", renderBlockedBarberDates);
+    $("blocked-barber-select").addEventListener("change", renderBlockedBarberDates);
+    $("blocked-barber-save").addEventListener("click", async () => {
+      try {
+        const payload = await fetchJson("/api/admin/blocked-barber-date", {
+          method: "POST",
+          body: JSON.stringify({
+            date: $("blocked-barber-date-input").value,
+            barberId: $("blocked-barber-select").value,
+            blocked: $("blocked-barber-toggle").checked,
+            note: $("blocked-barber-note").value,
+          }),
+        });
+        Object.assign(state, payload);
+        renderPublic();
+        renderAdmin();
+        setMessage($("blocked-barber-message"), $("blocked-barber-toggle").checked ? "Barbeiro bloqueado. Horarios confirmados dessa data foram cancelados e os clientes receberam aviso por e-mail." : "Bloqueio do barbeiro removido com sucesso.", "ok");
+      } catch (error) {
+        setMessage($("blocked-barber-message"), error.message, "err");
       }
     });
     $("agenda-week-prev").addEventListener("click", () => {
@@ -2905,6 +3138,7 @@
       renderSettings();
       renderSchedule();
       renderBlockedDates();
+      renderBlockedBarberDates();
       updateAdminView();
     };
 
