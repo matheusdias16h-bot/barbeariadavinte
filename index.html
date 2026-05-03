@@ -571,6 +571,27 @@
         background: rgba(255,255,255,0.02);
         color: var(--muted);
       }
+      .blocked-date-card {
+        margin-top: 16px;
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 6px;
+        background: rgba(255,255,255,0.02);
+        padding: 14px;
+        display: grid;
+        gap: 12px;
+      }
+      .blocked-date-list { display: grid; gap: 10px; }
+      .blocked-date-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        flex-wrap: wrap;
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 5px;
+        background: #0b0b0b;
+        padding: 12px;
+      }
       .schedule-table { display: grid; gap: 10px; }
     .day-row { display: grid; grid-template-columns: 120px 1fr; gap: 10px; align-items: start; }
     .chips { display: flex; flex-wrap: wrap; gap: 7px; }
@@ -1039,6 +1060,30 @@
             <p class="mini">Grade de 15 em 15 minutos. Clique para ligar ou desligar cada horario. O intervalo de almoco entre 12:00 e 13:00 fica bloqueado na agenda.</p>
             <div class="field" style="margin:16px 0;"><label for="schedule-barber">Barbeiro</label><select id="schedule-barber"></select></div>
             <div class="schedule-table" id="schedule-table"></div>
+            <div class="blocked-date-card">
+              <div>
+                <h3>Bloquear dia</h3>
+                <p class="mini">Use a caixinha para marcar datas em que a barbearia nao vai funcionar.</p>
+              </div>
+              <div class="field-grid">
+                <div class="field">
+                  <label for="blocked-date-input">Data</label>
+                  <input id="blocked-date-input" type="date" />
+                </div>
+                <div class="field">
+                  <label class="checkbox-line"><input id="blocked-date-toggle" type="checkbox" /> <span>Nao iremos funcionar hoje</span></label>
+                </div>
+                <div class="field full">
+                  <label for="blocked-date-note">Observacao</label>
+                  <input id="blocked-date-note" type="text" placeholder="Ex: feriado, manutencao, evento..." />
+                </div>
+              </div>
+              <div class="row-actions">
+                <button class="btn secondary" id="blocked-date-save" type="button">Salvar bloqueio</button>
+              </div>
+              <div class="message" id="blocked-date-message"></div>
+              <div class="blocked-date-list" id="blocked-date-list"></div>
+            </div>
           </div>
         </div>
 
@@ -1073,6 +1118,7 @@
       barberSummaries: [],
       reviews: [],
       emailOutbox: [],
+      blockedDates: [],
       customerLogged: false,
       customer: null,
       reviewableAppointments: [],
@@ -1229,6 +1275,10 @@
       const daysInTargetMonth = target.getDate();
       const nextMonthDate = new Date(year, month, Math.min(day, daysInTargetMonth));
       return nextMonthDate.toISOString().slice(0, 10);
+    }
+
+    function getBlockedDateEntry(dateText) {
+      return (state.blockedDates || []).find((item) => item.date === dateText) || null;
     }
 
     function minutesFromTimeText(timeText) {
@@ -1415,6 +1465,10 @@
         return;
       }
       const payload = await fetchJson(`/api/availability?barberId=${encodeURIComponent(barberId)}&date=${encodeURIComponent(date)}&serviceIds=${encodeURIComponent(serviceIds.join(","))}`);
+      if (payload.blocked) {
+        $("slot-grid").innerHTML = `<p class="mini">${escapeHtml(payload.message || "Nao vamos funcionar nessa data.")}</p>`;
+        return;
+      }
       $("slot-grid").innerHTML = payload.slots.length ? payload.slots.map((slot) => `
         <button class="slot" type="button" ${slot.available ? "" : "disabled"} data-time="${slot.time}">${slot.time}</button>
       `).join("") : '<p class="mini">Esse barbeiro nao tem horarios cadastrados nessa data.</p>';
@@ -1839,6 +1893,46 @@
       });
     }
 
+    function renderBlockedDates() {
+      if (!$("blocked-date-input")) return;
+      const today = new Date().toISOString().slice(0, 10);
+      if (!$("blocked-date-input").value) {
+        $("blocked-date-input").value = today;
+      }
+      $("blocked-date-input").min = today;
+      const selectedDate = $("blocked-date-input").value;
+      const entry = getBlockedDateEntry(selectedDate);
+      $("blocked-date-toggle").checked = Boolean(entry);
+      $("blocked-date-note").value = entry?.note || "";
+      $("blocked-date-list").innerHTML = (state.blockedDates || []).length
+        ? state.blockedDates.map((item) => `
+            <div class="blocked-date-item">
+              <div>
+                <strong>${escapeHtml(formatDateBr(item.date))}</strong>
+                <p class="mini">${escapeHtml(item.note || "Dia fechado sem observacao.")}</p>
+              </div>
+              <button class="btn ghost" type="button" data-unblock-date="${item.date}">Liberar dia</button>
+            </div>
+          `).join("")
+        : '<p class="mini">Nenhum dia inteiro bloqueado.</p>';
+      document.querySelectorAll("[data-unblock-date]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          try {
+            const payload = await fetchJson("/api/admin/blocked-date", {
+              method: "POST",
+              body: JSON.stringify({ date: button.dataset.unblockDate, blocked: false, note: "" }),
+            });
+            Object.assign(state, payload);
+            renderPublic();
+            renderAdmin();
+            setMessage($("blocked-date-message"), "Dia liberado novamente.", "ok");
+          } catch (error) {
+            setMessage($("blocked-date-message"), error.message, "err");
+          }
+        });
+      });
+    }
+
     const getAdminSelectedCustomer = () => {
       const customerId = Number($("admin-booking-customer")?.value || 0);
       return state.customers.find((customer) => Number(customer.id) === customerId) || null;
@@ -1873,6 +1967,10 @@
         return;
       }
       const payload = await fetchJson(`/api/availability?barberId=${encodeURIComponent(barberId)}&date=${encodeURIComponent(date)}&serviceIds=${encodeURIComponent(serviceIds.join(","))}`);
+      if (payload.blocked) {
+        $("admin-slot-grid").innerHTML = `<p class="mini">${escapeHtml(payload.message || "Nao vamos funcionar nessa data.")}</p>`;
+        return;
+      }
       $("admin-slot-grid").innerHTML = payload.slots.length ? payload.slots.map((slot) => `
         <button class="slot" type="button" ${slot.available ? "" : "disabled"} data-admin-time="${slot.time}">${slot.time}</button>
       `).join("") : '<p class="mini">Esse barbeiro nao tem horarios cadastrados nessa data.</p>';
@@ -2034,6 +2132,25 @@
       await saveAdmin();
     });
     $("schedule-barber").addEventListener("change", renderSchedule);
+    $("blocked-date-input").addEventListener("change", renderBlockedDates);
+    $("blocked-date-save").addEventListener("click", async () => {
+      try {
+        const payload = await fetchJson("/api/admin/blocked-date", {
+          method: "POST",
+          body: JSON.stringify({
+            date: $("blocked-date-input").value,
+            blocked: $("blocked-date-toggle").checked,
+            note: $("blocked-date-note").value,
+          }),
+        });
+        Object.assign(state, payload);
+        renderPublic();
+        renderAdmin();
+        setMessage($("blocked-date-message"), $("blocked-date-toggle").checked ? "Dia bloqueado com sucesso." : "Dia liberado com sucesso.", "ok");
+      } catch (error) {
+        setMessage($("blocked-date-message"), error.message, "err");
+      }
+    });
     $("agenda-week-prev").addEventListener("click", () => {
       ensureAgendaViewDefaults();
       const baseDate = new Date(`${state.agendaView.date}T00:00:00`);
@@ -2753,6 +2870,7 @@
       renderAdminServices();
       renderSettings();
       renderSchedule();
+      renderBlockedDates();
       updateAdminView();
     };
 

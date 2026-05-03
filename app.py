@@ -375,6 +375,15 @@ def init_db():
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS blocked_dates (
+                date TEXT PRIMARY KEY,
+                note TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            )
+            """
+        )
 
         if not conn.execute("SELECT id FROM settings WHERE id = 1").fetchone():
             conn.execute(
@@ -419,6 +428,44 @@ def read_settings(conn):
     return settings
 
 
+def read_blocked_dates(conn):
+    rows = conn.execute(
+        "SELECT date, note, created_at FROM blocked_dates ORDER BY date ASC"
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_blocked_date_entry(conn, date_text):
+    if not date_text:
+        return None
+    row = conn.execute(
+        "SELECT date, note, created_at FROM blocked_dates WHERE date = ?",
+        (date_text,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def set_blocked_date(date_text, blocked, note=""):
+    if not date_text:
+        raise ValueError("Escolha a data que deseja bloquear.")
+    try:
+        datetime.strptime(date_text, "%Y-%m-%d")
+    except ValueError as exc:
+        raise ValueError("Data invalida para bloqueio.") from exc
+    with db_connection() as conn:
+        if blocked:
+            conn.execute(
+                """
+                INSERT INTO blocked_dates (date, note, created_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(date) DO UPDATE SET note = excluded.note
+                """,
+                (date_text, str(note or "").strip(), datetime.now().strftime("%d/%m/%Y, %H:%M")),
+            )
+        else:
+            conn.execute("DELETE FROM blocked_dates WHERE date = ?", (date_text,))
+
+
 def read_public_data(include_admin=False):
     init_db()
     with db_connection() as conn:
@@ -448,7 +495,13 @@ def read_public_data(include_admin=False):
                 "SELECT id, name, specialty, email, photo, active FROM barbers WHERE active = 1 ORDER BY id"
             ).fetchall()
         ]
-        payload = {"settings": settings, "services": services, "barbers": barbers, "reviews": read_barber_reviews(conn)[:8]}
+        payload = {
+            "settings": settings,
+            "services": services,
+            "barbers": barbers,
+            "reviews": read_barber_reviews(conn)[:8],
+            "blockedDates": read_blocked_dates(conn),
+        }
         if include_admin:
             payload["services"] = [
                 dict(row)
@@ -779,15 +832,22 @@ def get_selected_service_rows(conn, service_ids):
     return [by_id[service_id] for service_id in clean_ids if service_id in by_id]
 
 
-def get_availability(barber_id, date_text, service_ids=None):
+def get_availability_payload(barber_id, date_text, service_ids=None):
     try:
         appointment_date = datetime.strptime(date_text, "%Y-%m-%d").date()
     except ValueError:
-        return []
+        return {"slots": [], "blocked": False, "message": ""}
     weekday = appointment_date.weekday()
     today = datetime.now().date()
     now_time = datetime.now().strftime("%H:%M")
     with db_connection() as conn:
+        blocked_entry = get_blocked_date_entry(conn, date_text)
+        if blocked_entry:
+            note = str(blocked_entry.get("note") or "").strip()
+            message = "Nao vamos funcionar nessa data."
+            if note:
+                message = f"Nao vamos funcionar nessa data. Motivo: {note}"
+            return {"slots": [], "blocked": True, "message": message}
         selected_services = get_selected_service_rows(conn, service_ids or [])
         required_duration = sum(int(row["duration"]) for row in selected_services) or 30
         slots = [
@@ -823,26 +883,34 @@ def get_availability(barber_id, date_text, service_ids=None):
         closing_minutes = time_to_minutes(slots[-1]) + SLOT_INTERVAL_MINUTES if slots else 0
         lunch_start_minutes = time_to_minutes(LUNCH_START)
         lunch_end_minutes = time_to_minutes(LUNCH_END)
-    return [
-        {
-            "time": time,
-            "available": (
-                (appointment_date > today or time > now_time)
-                and (time_to_minutes(time) + required_duration) <= closing_minutes
-                and not ranges_overlap(
-                    time_to_minutes(time),
-                    time_to_minutes(time) + required_duration,
-                    lunch_start_minutes,
-                    lunch_end_minutes,
-                )
-                and not any(
-                    ranges_overlap(time_to_minutes(time), time_to_minutes(time) + required_duration, start, end)
-                    for start, end in busy_ranges
-                )
-            ),
-        }
-        for time in slots
-    ]
+    return {
+        "slots": [
+            {
+                "time": time,
+                "available": (
+                    (appointment_date > today or time > now_time)
+                    and (time_to_minutes(time) + required_duration) <= closing_minutes
+                    and not ranges_overlap(
+                        time_to_minutes(time),
+                        time_to_minutes(time) + required_duration,
+                        lunch_start_minutes,
+                        lunch_end_minutes,
+                    )
+                    and not any(
+                        ranges_overlap(time_to_minutes(time), time_to_minutes(time) + required_duration, start, end)
+                        for start, end in busy_ranges
+                    )
+                ),
+            }
+            for time in slots
+        ],
+        "blocked": False,
+        "message": "",
+    }
+
+
+def get_availability(barber_id, date_text, service_ids=None):
+    return get_availability_payload(barber_id, date_text, service_ids).get("slots", [])
 
 
 def create_customer(payload):
@@ -1286,7 +1354,10 @@ def create_appointment(payload, customer=None):
     if not all([name, phone, date_text, time, service_id, barber_id]):
         raise ValueError("Preencha nome, WhatsApp, servico, barbeiro, data e horario.")
 
-    available = get_availability(barber_id, date_text, service_ids)
+    availability = get_availability_payload(barber_id, date_text, service_ids)
+    if availability.get("blocked"):
+        raise ValueError(availability.get("message") or "Nao vamos funcionar nessa data.")
+    available = availability.get("slots", [])
     if not any(slot["time"] == time and slot["available"] for slot in available):
         raise ValueError("Esse horario acabou de ficar indisponivel. Escolha outro horario.")
 
@@ -1557,7 +1628,7 @@ class AppHandler(BaseHTTPRequestHandler):
             service_ids = []
             for raw_value in query.get("serviceIds", []) + query.get("serviceId", []):
                 service_ids.extend([item for item in raw_value.split(",") if item])
-            return self.send_json(HTTPStatus.OK, {"slots": get_availability(barber_id, date_text, service_ids)})
+            return self.send_json(HTTPStatus.OK, get_availability_payload(barber_id, date_text, service_ids))
         if parsed.path == "/api/client/session":
             customer = enrich_customer_with_plan(self.get_current_customer())
             return self.send_json(HTTPStatus.OK, {
@@ -1613,6 +1684,10 @@ class AppHandler(BaseHTTPRequestHandler):
             if not self.require_auth():
                 return
             return self.handle_cancel_plan()
+        if parsed.path == "/api/admin/blocked-date":
+            if not self.require_auth():
+                return
+            return self.handle_blocked_date()
         if parsed.path == "/api/admin/create-appointment":
             if not self.require_auth():
                 return
@@ -1808,6 +1883,20 @@ class AppHandler(BaseHTTPRequestHandler):
             return
         try:
             cancel_monthly_plan(int(payload.get("id") or 0))
+        except ValueError as exc:
+            return self.send_error_json(HTTPStatus.BAD_REQUEST, str(exc))
+        return self.send_json(HTTPStatus.OK, read_public_data(include_admin=True))
+
+    def handle_blocked_date(self):
+        payload = self.read_json_body()
+        if payload is None:
+            return
+        try:
+            set_blocked_date(
+                str(payload.get("date", "")).strip(),
+                bool(payload.get("blocked")),
+                str(payload.get("note", "")).strip(),
+            )
         except ValueError as exc:
             return self.send_error_json(HTTPStatus.BAD_REQUEST, str(exc))
         return self.send_json(HTTPStatus.OK, read_public_data(include_admin=True))
