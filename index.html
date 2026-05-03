@@ -1258,6 +1258,12 @@
       return "https://wa.me/" + number + "?text=" + encodeURIComponent(text || "Ola! Vim pelo site da Barbearia da Vinte.");
     }
 
+    function clientWhatsappUrl(phone, text) {
+      const digits = String(phone || "").replace(/\D/g, "").replace(/^55/, "");
+      if (!digits) return "#";
+      return "https://wa.me/55" + digits + "?text=" + encodeURIComponent(text || "Ola!");
+    }
+
     function formatDateBr(isoDate) {
       if (!isoDate || !isoDate.includes("-")) return isoDate || "";
       const [year, month, day] = isoDate.split("-");
@@ -1910,6 +1916,34 @@
               <div>
                 <strong>${escapeHtml(formatDateBr(item.date))}</strong>
                 <p class="mini">${escapeHtml(item.note || "Dia fechado sem observacao.")}</p>
+                ${(() => {
+                  const canceledAppointments = (state.appointments || []).filter((appointment) =>
+                    appointment.date === item.date
+                    && appointment.status === "canceled"
+                    && appointment.cancel_reason === "blocked_date"
+                  );
+                  if (!canceledAppointments.length) {
+                    return '<p class="mini">Nenhum agendamento confirmado precisou ser cancelado nessa data.</p>';
+                  }
+                  return `
+                    <div class="blocked-date-list" style="margin-top:10px;">
+                      ${canceledAppointments.map((appointment) => {
+                        const message = `Ola, ${appointment.client_name}! Precisamos cancelar o seu horario na Barbearia da Vinte do dia ${formatDateBr(appointment.date)} as ${appointment.time} com ${appointment.barber_name}.${item.note ? ` Motivo: ${item.note}.` : ""} Me chama aqui para te ajudar a remarcar no melhor horario.`;
+                        const whatsappHref = clientWhatsappUrl(appointment.client_phone, message);
+                        return `
+                          <div class="blocked-date-item" style="margin-top:8px;">
+                            <div>
+                              <strong>${escapeHtml(appointment.client_name)}</strong>
+                              <p class="mini">${escapeHtml(appointment.time)} · ${escapeHtml(appointment.service_name)} com ${escapeHtml(appointment.barber_name)}</p>
+                              <p class="mini">${escapeHtml(appointment.client_phone)}${appointment.client_email ? ` · ${escapeHtml(appointment.client_email)}` : ""}</p>
+                            </div>
+                            ${appointment.client_phone ? `<a class="btn ghost" href="${escapeHtml(whatsappHref)}" target="_blank" rel="noreferrer">WhatsApp</a>` : ""}
+                          </div>
+                        `;
+                      }).join("")}
+                    </div>
+                  `;
+                })()}
               </div>
               <button class="btn ghost" type="button" data-unblock-date="${item.date}">Liberar dia</button>
             </div>
@@ -2146,7 +2180,7 @@
         Object.assign(state, payload);
         renderPublic();
         renderAdmin();
-        setMessage($("blocked-date-message"), $("blocked-date-toggle").checked ? "Dia bloqueado com sucesso." : "Dia liberado com sucesso.", "ok");
+        setMessage($("blocked-date-message"), $("blocked-date-toggle").checked ? "Dia bloqueado. Horarios confirmados dessa data foram cancelados e os clientes receberam aviso por e-mail." : "Dia liberado com sucesso.", "ok");
       } catch (error) {
         setMessage($("blocked-date-message"), error.message, "err");
       }

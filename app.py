@@ -333,6 +333,7 @@ def init_db():
         ensure_column(conn, "appointments", "customer_id", "INTEGER")
         ensure_column(conn, "appointments", "plan_booking", "INTEGER NOT NULL DEFAULT 0")
         ensure_column(conn, "appointments", "reminder_sent_at", "TEXT NOT NULL DEFAULT ''")
+        ensure_column(conn, "appointments", "cancel_reason", "TEXT NOT NULL DEFAULT ''")
         ensure_column(conn, "monthly_plans", "barber_id", "INTEGER")
         ensure_column(conn, "monthly_plans", "plan_name", "TEXT NOT NULL DEFAULT ''")
         ensure_column(conn, "monthly_plans", "plan_price", "REAL NOT NULL DEFAULT 0")
@@ -445,6 +446,72 @@ def get_blocked_date_entry(conn, date_text):
     return dict(row) if row else None
 
 
+def read_confirmed_appointments_for_date(conn, date_text):
+    rows = conn.execute(
+        """
+        SELECT a.id, a.client_name, a.client_phone, a.client_email, a.notes, a.date, a.time, a.created_at,
+               a.customer_id, a.plan_booking, a.barber_id,
+               COALESCE((
+                   SELECT GROUP_CONCAT(s2.name, ' + ')
+                   FROM appointment_services aps
+                   JOIN services s2 ON s2.id = aps.service_id
+                   WHERE aps.appointment_id = a.id
+               ), s.name) AS service_name,
+               COALESCE((
+                   SELECT SUM(s2.price)
+                   FROM appointment_services aps
+                   JOIN services s2 ON s2.id = aps.service_id
+                   WHERE aps.appointment_id = a.id
+               ), s.price) AS service_price,
+               COALESCE((
+                   SELECT SUM(s2.duration)
+                   FROM appointment_services aps
+                   JOIN services s2 ON s2.id = aps.service_id
+                   WHERE aps.appointment_id = a.id
+               ), s.duration) AS service_duration,
+               b.name AS barber_name, b.email AS barber_email
+        FROM appointments a
+        JOIN services s ON s.id = a.service_id
+        JOIN barbers b ON b.id = a.barber_id
+        WHERE a.date = ? AND a.status = 'confirmed'
+        ORDER BY a.time, a.id
+        """,
+        (date_text,),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def notify_customer_cancellation(conn, appointment, note=""):
+    recipient = appointment.get("client_email", "").strip()
+    if not recipient:
+        return
+    subject = f"Seu horario na Barbearia da Vinte em {appointment['date']} as {appointment['time']} foi cancelado"
+    body = (
+        f"Ola, {appointment['client_name']}!\n\n"
+        f"Precisamos cancelar o seu horario na Barbearia da Vinte.\n\n"
+        f"Barbeiro: {appointment['barber_name']}\n"
+        f"Servico: {appointment['service_name']}\n"
+        f"Data: {appointment['date']}\n"
+        f"Horario: {appointment['time']}\n"
+        f"Valor: R$ {appointment['service_price']:.2f}\n"
+    )
+    if note:
+        body += f"Motivo: {note}\n"
+    body += "\nEntre em contato com a barbearia para remarcar no melhor horario para voce."
+    send_and_log_email(conn, appointment["id"], recipient, subject, body)
+
+
+def cancel_appointments_for_blocked_date(conn, date_text, note=""):
+    appointments = read_confirmed_appointments_for_date(conn, date_text)
+    for appointment in appointments:
+        conn.execute(
+            "UPDATE appointments SET status = 'canceled', cancel_reason = 'blocked_date' WHERE id = ?",
+            (appointment["id"],),
+        )
+        notify_customer_cancellation(conn, appointment, note)
+    return appointments
+
+
 def set_blocked_date(date_text, blocked, note=""):
     if not date_text:
         raise ValueError("Escolha a data que deseja bloquear.")
@@ -462,6 +529,7 @@ def set_blocked_date(date_text, blocked, note=""):
                 """,
                 (date_text, str(note or "").strip(), datetime.now().strftime("%d/%m/%Y, %H:%M")),
             )
+            cancel_appointments_for_blocked_date(conn, date_text, str(note or "").strip())
         else:
             conn.execute("DELETE FROM blocked_dates WHERE date = ?", (date_text,))
 
@@ -530,10 +598,12 @@ def read_public_data(include_admin=False):
 
 
 def read_appointments(conn):
+    ensure_column(conn, "appointments", "cancel_reason", "TEXT NOT NULL DEFAULT ''")
     rows = conn.execute(
         """
         SELECT a.id, a.client_name, a.client_phone, a.client_email, a.notes, a.date, a.time,
                a.status, a.created_at, a.customer_id, a.plan_booking, a.barber_id,
+               COALESCE(a.cancel_reason, '') AS cancel_reason,
                COALESCE((
                    SELECT GROUP_CONCAT(s2.name, ' + ')
                    FROM appointment_services aps
@@ -1864,7 +1934,16 @@ class AppHandler(BaseHTTPRequestHandler):
         if status not in {"confirmed", "canceled", "done"}:
             return self.send_error_json(HTTPStatus.BAD_REQUEST, "Status invalido.")
         with db_connection() as conn:
-            conn.execute("UPDATE appointments SET status = ? WHERE id = ?", (status, appointment_id))
+            appointment = conn.execute("SELECT id, date FROM appointments WHERE id = ?", (appointment_id,)).fetchone()
+            if not appointment:
+                return self.send_error_json(HTTPStatus.BAD_REQUEST, "Agendamento nao encontrado.")
+            if status == "confirmed" and get_blocked_date_entry(conn, appointment["date"]):
+                return self.send_error_json(HTTPStatus.BAD_REQUEST, "Esse dia esta bloqueado e nao pode voltar a ficar confirmado.")
+            cancel_reason = "manual" if status == "canceled" else ""
+            conn.execute(
+                "UPDATE appointments SET status = ?, cancel_reason = ? WHERE id = ?",
+                (status, cancel_reason, appointment_id),
+            )
         return self.send_json(HTTPStatus.OK, read_public_data(include_admin=True))
 
     def handle_save_plan(self):
