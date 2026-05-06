@@ -1587,13 +1587,17 @@ def create_appointment(payload, customer=None):
         total_duration = sum(int(row["duration"]) for row in services)
         service_names = " + ".join(row["name"] for row in services)
         active_plan = get_active_plan_for_customer(conn, customer_id, date_text) if customer_id else None
+        plan_has_balance = bool(active_plan and int(active_plan.get("haircuts_remaining") or 0) > 0)
         monthly_plan_services = [row for row in services if is_monthly_plan_service_name(row["name"])]
-        if active_plan:
+        if plan_has_balance:
             if len(services) != 1 or len(monthly_plan_services) != 1:
                 raise ValueError("Quem tem plano ativo precisa marcar usando somente o servico Ja tenho mensal.")
             if int(active_plan.get("barber_id") or 0) != barber_id:
                 raise ValueError(f"Esse plano mensal so pode ser usado com o barbeiro {active_plan.get('barber_name') or 'do plano'}.")
             plan_booking = True
+        elif monthly_plan_services or plan_booking:
+            if active_plan:
+                raise ValueError("Esse plano ja usou os 4 cortes disponiveis. Agora voce pode marcar um corte normal com qualquer barbeiro.")
         if plan_booking:
             if not customer_id:
                 raise ValueError("Entre na sua conta para usar corte do plano.")
@@ -1604,8 +1608,8 @@ def create_appointment(payload, customer=None):
                 raise ValueError("Seu plano mensal nao esta ativo para essa data.")
             if int(active_plan.get("barber_id") or 0) != barber_id:
                 raise ValueError(f"Esse plano mensal so pode ser usado com o barbeiro {active_plan.get('barber_name') or 'do plano'}.")
-            if int(active_plan["haircuts_used"]) >= PLAN_MAX_HAIRCUTS:
-                raise ValueError("Esse plano ja usou os 4 cortes disponiveis.")
+            if int(active_plan.get("haircuts_remaining") or 0) <= 0:
+                raise ValueError("Esse plano ja usou os 4 cortes disponiveis. Agora voce pode marcar um corte normal com qualquer barbeiro.")
         try:
             cursor = conn.execute(
                 """

@@ -1253,6 +1253,10 @@
       return Boolean(plan && Number(plan.haircuts_remaining || 0) > 0);
     }
 
+    function planIsRestricted(plan) {
+      return Boolean(plan && Number(plan.haircuts_remaining || 0) > 0);
+    }
+
     function isMonthlyPlanService(service) {
       const name = String(service?.name || "").toLowerCase();
       return name.includes("ja tenho mensal") || name.includes("já tenho mensal");
@@ -1272,12 +1276,12 @@
 
     function syncPlanBookingUi() {
       const plan = state.customer?.active_plan;
-      const hasActivePlan = Boolean(plan);
+      const hasLockedPlan = planIsRestricted(plan);
       const lockedBarberId = getLockedPlanBarberId();
       const planCheckbox = $("plan-booking");
       if (planCheckbox) {
-        planCheckbox.checked = hasActivePlan;
-        planCheckbox.disabled = hasActivePlan;
+        planCheckbox.checked = hasLockedPlan;
+        planCheckbox.disabled = !customerCanUsePlan();
       }
 
       document.querySelectorAll('input[name="serviceIds"]').forEach((input) => {
@@ -1286,7 +1290,7 @@
           return;
         }
         const monthlyService = isMonthlyPlanService(service);
-        if (hasActivePlan) {
+        if (hasLockedPlan) {
           input.checked = monthlyService;
           input.disabled = !monthlyService;
           input.closest(".service-choice")?.style.setProperty("opacity", monthlyService ? "1" : ".45");
@@ -1303,7 +1307,7 @@
       });
 
       const barberSelect = $("barber-select");
-      if (barberSelect && hasActivePlan && lockedBarberId) {
+      if (barberSelect && hasLockedPlan && lockedBarberId) {
         barberSelect.value = lockedBarberId;
         barberSelect.setAttribute("aria-disabled", "true");
       } else if (barberSelect) {
@@ -1311,7 +1315,7 @@
       }
 
       document.querySelectorAll("[data-pick-barber]").forEach((button) => {
-        const disabled = Boolean(hasActivePlan && lockedBarberId && button.dataset.pickBarber !== lockedBarberId);
+        const disabled = Boolean(hasLockedPlan && lockedBarberId && button.dataset.pickBarber !== lockedBarberId);
         button.toggleAttribute("aria-disabled", disabled);
         button.style.pointerEvents = disabled ? "none" : "";
         button.style.opacity = disabled ? ".45" : "";
@@ -1644,11 +1648,13 @@
         payload.time = $("time-input").value;
         payload.planBooking = $("plan-booking").checked;
         const response = await fetchJson("/api/appointments", { method: "POST", body: JSON.stringify(payload) });
+        const successText = `Horario confirmado com ${response.appointment.barber_name} em ${formatDateBr(response.appointment.date)} as ${response.appointment.time}.`;
         form.reset();
-        renderClientSession();
+        state.selectedTime = "";
+        $("time-input").value = "";
+        await checkClientSession();
         setDefaultDate();
         await loadAvailability();
-        const successText = `Horario confirmado com ${response.appointment.barber_name} em ${formatDateBr(response.appointment.date)} as ${response.appointment.time}.`;
         setMessage($("booking-message"), successText, "ok");
         showBookingConfirmModal(successText);
       } catch (error) {
@@ -2338,6 +2344,7 @@
       }
       const selectedCustomer = getAdminSelectedCustomer();
       const activePlan = selectedCustomer?.active_plan || null;
+      const lockedAdminPlan = planIsRestricted(activePlan) ? activePlan : null;
       const nameInput = $("admin-booking-name");
       const phoneInput = $("admin-booking-phone");
       const emailInput = $("admin-booking-email");
@@ -2356,8 +2363,8 @@
 
       $("admin-service-choice-list").innerHTML = state.services.map((service, index) => {
         const monthlyService = isMonthlyPlanService(service);
-        const disabled = Boolean(activePlan && !monthlyService);
-        const checked = activePlan
+        const disabled = Boolean(lockedAdminPlan && !monthlyService) || (monthlyService && !lockedAdminPlan);
+        const checked = lockedAdminPlan
           ? monthlyService
           : (previousServiceIds.length ? previousServiceIds.includes(String(service.id)) : index === 0);
         return `
@@ -2911,21 +2918,22 @@
       `).join("") : '<p class="mini">As primeiras avaliacoes vao aparecer aqui assim que os clientes concluirem o atendimento.</p>';
 
       const activePlan = state.customer?.active_plan;
-      const lockedBarberId = getLockedPlanBarberId();
+      const hasLockedPlan = planIsRestricted(activePlan);
+      const lockedBarberId = hasLockedPlan ? getLockedPlanBarberId() : "";
       $("service-choice-list").innerHTML = state.services.map((service, index) => {
         const monthlyService = isMonthlyPlanService(service);
-        const activePlanRestriction = Boolean(activePlan && !monthlyService);
+        const activePlanRestriction = Boolean(hasLockedPlan && !monthlyService);
         const disabledForPlan = activePlanRestriction || (monthlyService && !customerCanUsePlan());
         const helperText = activePlanRestriction
           ? " - exclusivo para clientes sem plano ativo"
-          : monthlyService && activePlan
+          : monthlyService && hasLockedPlan
             ? ` - plano com ${escapeHtml(activePlan.barber_name || "seu barbeiro")}`
-            : disabledForPlan
+          : disabledForPlan
               ? " - plano inativo ou sem saldo"
               : "";
         return `
         <label class="service-choice" style="${disabledForPlan ? 'opacity:.45;cursor:not-allowed;' : ''}">
-          <input type="checkbox" name="serviceIds" value="${service.id}" ${((activePlan && monthlyService) || (index === 0 && !disabledForPlan && !activePlan)) ? "checked" : ""} ${disabledForPlan ? "disabled" : ""} />
+          <input type="checkbox" name="serviceIds" value="${service.id}" ${((hasLockedPlan && monthlyService) || (index === 0 && !disabledForPlan && !hasLockedPlan)) ? "checked" : ""} ${disabledForPlan ? "disabled" : ""} />
           <span>
             <strong>${escapeHtml(service.name)}</strong>
             <span>${money(service.price)} - ${escapeHtml(service.duration)} min${helperText}</span>
@@ -2933,7 +2941,7 @@
         </label>
       `;
       }).join("");
-      const availableBarbers = activePlan && lockedBarberId
+      const availableBarbers = hasLockedPlan && lockedBarberId
         ? state.barbers.filter((barber) => String(barber.id) === lockedBarberId)
         : state.barbers;
       $("barber-select").innerHTML = availableBarbers.map((barber) => `<option value="${barber.id}">${escapeHtml(barber.name)}</option>`).join("");
@@ -2945,7 +2953,7 @@
       });
       document.querySelectorAll("[data-pick-barber]").forEach((btn) => {
         btn.addEventListener("click", () => {
-          if (activePlan && lockedBarberId && btn.dataset.pickBarber !== lockedBarberId) {
+          if (hasLockedPlan && lockedBarberId && btn.dataset.pickBarber !== lockedBarberId) {
             return;
           }
           $("barber-select").value = btn.dataset.pickBarber;
@@ -3028,7 +3036,7 @@
                 </div>
               </div>
               <div class="client-panel-section" style="margin-top:12px;">
-                ${plan ? `<p><span class="status-chip confirmed">Plano ativo ${escapeHtml(formatDateBr(plan.start_date))} ate ${escapeHtml(formatDateBr(plan.end_date))}</span></p><p class="mini">Cortes usados: ${escapeHtml(plan.haircuts_used)} de ${escapeHtml(plan.haircuts_limit)} - Restam ${escapeHtml(plan.haircuts_remaining)}</p><p class="mini">Com plano ativo, o agendamento fica liberado apenas em <strong>Ja tenho mensal</strong> com <strong>${escapeHtml(plan.barber_name || "o barbeiro do plano")}</strong>.</p>` : '<p class="mini">Sem plano mensal ativo.</p>'}
+                ${plan ? `<p><span class="status-chip confirmed">Plano ativo ${escapeHtml(formatDateBr(plan.start_date))} ate ${escapeHtml(formatDateBr(plan.end_date))}</span></p><p class="mini">Cortes usados: ${escapeHtml(plan.haircuts_used)} de ${escapeHtml(plan.haircuts_limit)} - Restam ${escapeHtml(plan.haircuts_remaining)}</p><p class="mini">${planIsRestricted(plan) ? `Com saldo no plano, o agendamento fica liberado apenas em <strong>Ja tenho mensal</strong> com <strong>${escapeHtml(plan.barber_name || "o barbeiro do plano")}</strong>.` : "O saldo do plano acabou. Agora voce pode marcar um corte normal com qualquer barbeiro e pagar normalmente."}</p>` : '<p class="mini">Sem plano mensal ativo.</p>'}
               </div>
             </section>
 
@@ -3208,6 +3216,100 @@
         </div>
       `).join("") : '<p class="mini">Sem dados suficientes para o resumo dos barbeiros.</p>';
     }
+
+    renderAdminBooking = function () {
+      if (!$("admin-booking-customer")) return;
+      const previousCustomerId = $("admin-booking-customer").value || "";
+      const previousName = $("admin-booking-name").value || "";
+      const previousPhone = $("admin-booking-phone").value || "";
+      const previousEmail = $("admin-booking-email").value || "";
+      const previousNotes = $("admin-booking-notes").value || "";
+      const previousDate = $("admin-booking-date").value || "";
+      const previousBarberId = $("admin-booking-barber").value || "";
+      const previousServiceIds = Array.from(document.querySelectorAll('#admin-service-choice-list input[name="adminServiceIds"]:checked')).map((input) => input.value);
+      const preferredTime = $("admin-time-input").value || state.adminBookingSelectedTime || "";
+      $("admin-booking-customer").innerHTML = [`<option value="">Cliente avulso</option>`].concat(
+        state.customers.map((customer) => `<option value="${customer.id}">${escapeHtml(customer.name)} Â· ${escapeHtml(customer.phone)}</option>`)
+      ).join("");
+      if (previousCustomerId && state.customers.some((customer) => String(customer.id) === previousCustomerId)) {
+        $("admin-booking-customer").value = previousCustomerId;
+      }
+      const selectedCustomer = getAdminSelectedCustomer();
+      const activePlan = selectedCustomer?.active_plan || null;
+      const lockedAdminPlan = planIsRestricted(activePlan) ? activePlan : null;
+      const nameInput = $("admin-booking-name");
+      const phoneInput = $("admin-booking-phone");
+      const emailInput = $("admin-booking-email");
+      if (selectedCustomer) {
+        nameInput.value = selectedCustomer.name || "";
+        phoneInput.value = selectedCustomer.phone || "";
+        emailInput.value = selectedCustomer.email || "";
+      } else {
+        nameInput.value = previousName;
+        phoneInput.value = previousPhone;
+        emailInput.value = previousEmail;
+      }
+      [nameInput, phoneInput, emailInput].forEach((input) => {
+        input.readOnly = Boolean(selectedCustomer);
+      });
+
+      $("admin-service-choice-list").innerHTML = state.services.map((service, index) => {
+        const monthlyService = isMonthlyPlanService(service);
+        const disabled = Boolean(lockedAdminPlan && !monthlyService) || (monthlyService && !lockedAdminPlan);
+        const checked = lockedAdminPlan
+          ? monthlyService
+          : (previousServiceIds.length ? previousServiceIds.includes(String(service.id)) : index === 0);
+        const helperText = lockedAdminPlan && monthlyService
+          ? " Â· plano mensal"
+          : disabled && monthlyService
+            ? " Â· plano sem saldo"
+            : "";
+        return `
+          <label class="service-choice" style="${disabled ? "opacity:.45;cursor:not-allowed;" : ""}">
+            <input type="checkbox" name="adminServiceIds" value="${service.id}" ${checked ? "checked" : ""} ${disabled ? "disabled" : ""} />
+            <span>
+              <strong>${escapeHtml(service.name)}</strong>
+              <span>${money(service.price)} Â· ${escapeHtml(service.duration)} min${helperText}</span>
+            </span>
+          </label>
+        `;
+      }).join("");
+      document.querySelectorAll('#admin-service-choice-list input[name="adminServiceIds"]').forEach((input) => {
+        input.addEventListener("change", () => {
+          state.adminBookingSelectedTime = "";
+          updateAdminBookingSummary();
+          loadAdminBookingAvailability().catch((error) => setMessage($("admin-booking-message"), error.message, "err"));
+        });
+      });
+
+      const availableBarbers = lockedAdminPlan && lockedAdminPlan.barber_id
+        ? state.barbers.filter((barber) => String(barber.id) === String(lockedAdminPlan.barber_id))
+        : state.barbers;
+      $("admin-booking-barber").innerHTML = availableBarbers.map((barber) => `<option value="${barber.id}">${escapeHtml(barber.name)}</option>`).join("");
+      const barberSelect = $("admin-booking-barber");
+      if (availableBarbers.some((barber) => String(barber.id) === previousBarberId) && !lockedAdminPlan) {
+        barberSelect.value = previousBarberId;
+      } else if (availableBarbers[0]) {
+        barberSelect.value = String(availableBarbers[0].id);
+      }
+      barberSelect.disabled = Boolean(lockedAdminPlan);
+
+      const today = new Date().toISOString().slice(0, 10);
+      $("admin-booking-date").min = today;
+      $("admin-booking-date").value = previousDate || today;
+      $("admin-booking-notes").value = previousNotes;
+
+      $("admin-booking-plan-note").textContent = lockedAdminPlan
+        ? `Cliente com plano ativo de ${formatDateBr(lockedAdminPlan.start_date)} ate ${formatDateBr(lockedAdminPlan.end_date)}. Marque somente Ja tenho mensal com ${lockedAdminPlan.barber_name || "o barbeiro do plano"}.`
+        : activePlan
+          ? `Cliente com plano ativo de ${formatDateBr(activePlan.start_date)} ate ${formatDateBr(activePlan.end_date)}, mas sem saldo no mensal. Pode marcar qualquer servico particular normalmente.`
+          : selectedCustomer
+            ? "Cliente cadastrado sem plano ativo. Pode marcar qualquer servico disponivel."
+            : "Selecione um cliente cadastrado para vincular o historico ou preencha manualmente para um cliente avulso.";
+
+      updateAdminBookingSummary();
+      loadAdminBookingAvailability(preferredTime).catch((error) => setMessage($("admin-booking-message"), error.message, "err"));
+    };
 
     renderAdmin = function () {
       renderOverviewStats();
