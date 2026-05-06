@@ -1682,6 +1682,18 @@
       });
     }
 
+    function getAgendaVisualSourceAppointments() {
+      const now = new Date();
+      const oneMonthAgo = new Date(now);
+      oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+      return state.appointments.filter((item) => {
+        if (!["confirmed", "done"].includes(item.status)) return false;
+        const startsAt = appointmentStartsAt(item);
+        if (Number.isNaN(startsAt.getTime())) return false;
+        return startsAt >= oneMonthAgo;
+      });
+    }
+
     function ensureAgendaViewDefaults() {
       const today = new Date().toISOString().slice(0, 10);
       if (!state.agendaView.date) {
@@ -1698,7 +1710,7 @@
 
     function getAgendaVisualAppointments() {
       ensureAgendaViewDefaults();
-      return getActiveAgendaAppointments().filter((item) =>
+      return getAgendaVisualSourceAppointments().filter((item) =>
         item.date === state.agendaView.date
         && String(item.barber_id) === String(state.agendaView.barberId)
       );
