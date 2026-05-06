@@ -396,6 +396,41 @@
       box-shadow: 0 14px 34px rgba(0,0,0,0.45);
       font-size: 1.5rem;
     }
+    .booking-confirm-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 75;
+      background: rgba(0,0,0,0.78);
+      backdrop-filter: blur(8px);
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+    .booking-confirm-dialog {
+      width: min(460px, 100%);
+      background: linear-gradient(180deg, rgba(22,22,22,0.98), rgba(8,8,8,0.98));
+      border: 1px solid rgba(181,154,102,0.28);
+      border-radius: 8px;
+      box-shadow: 0 26px 70px rgba(0,0,0,0.5);
+      padding: 28px 24px;
+      text-align: center;
+      display: grid;
+      gap: 14px;
+    }
+    .booking-confirm-dialog strong {
+      font-size: clamp(1.2rem, 3vw, 1.65rem);
+      text-transform: uppercase;
+      color: var(--ink);
+    }
+    .booking-confirm-dialog p {
+      color: #d8d0c4;
+      line-height: 1.7;
+      margin: 0;
+    }
+    .booking-confirm-dialog .btn {
+      justify-self: center;
+      min-width: 140px;
+    }
     .admin-modal[hidden], [hidden] { display: none !important; }
     .admin-modal {
       position: fixed;
@@ -815,6 +850,14 @@
 
   <footer><span id="footer-name">Barbearia da Vinte</span> - Todos os direitos reservados.</footer>
   <a class="whatsapp" id="floating-whatsapp" href="#" target="_blank" rel="noreferrer" aria-label="Chamar no WhatsApp">☏</a>
+
+  <section class="booking-confirm-modal" id="booking-confirm-modal" hidden role="dialog" aria-modal="true" aria-labelledby="booking-confirm-title">
+    <div class="booking-confirm-dialog">
+      <strong id="booking-confirm-title">Horario confirmado</strong>
+      <p id="booking-confirm-text">Seu horario foi confirmado com sucesso.</p>
+      <button class="btn" id="booking-confirm-ok" type="button">OK</button>
+    </div>
+  </section>
 
   <section class="admin-modal" id="admin-modal" hidden role="dialog" aria-modal="true">
     <div class="admin-dialog">
@@ -1291,6 +1334,18 @@
       el.className = "message " + type;
     }
 
+    function hideBookingConfirmModal() {
+      if (!$("booking-confirm-modal")) return;
+      $("booking-confirm-modal").hidden = true;
+    }
+
+    function showBookingConfirmModal(text) {
+      if (!$("booking-confirm-modal")) return;
+      $("booking-confirm-text").textContent = text || "Seu horario foi confirmado com sucesso.";
+      $("booking-confirm-modal").hidden = false;
+      $("booking-confirm-ok").focus();
+    }
+
     function whatsappUrl(text) {
       const number = (state.settings.whatsapp || "").replace(/\D/g, "");
       return "https://wa.me/" + number + "?text=" + encodeURIComponent(text || "Ola! Vim pelo site da Barbearia da Vinte.");
@@ -1593,7 +1648,9 @@
         renderClientSession();
         setDefaultDate();
         await loadAvailability();
-        setMessage($("booking-message"), `Horario confirmado com ${response.appointment.barber_name} em ${response.appointment.date} as ${response.appointment.time}.`, "ok");
+        const successText = `Horario confirmado com ${response.appointment.barber_name} em ${formatDateBr(response.appointment.date)} as ${response.appointment.time}.`;
+        setMessage($("booking-message"), successText, "ok");
+        showBookingConfirmModal(successText);
       } catch (error) {
         setMessage($("booking-message"), error.message, "err");
         await loadAvailability();
@@ -2604,6 +2661,10 @@
     $("close-admin").addEventListener("click", () => $("admin-modal").hidden = true);
     $("admin-modal").addEventListener("click", (event) => {
       if (event.target === $("admin-modal")) $("admin-modal").hidden = true;
+    });
+    $("booking-confirm-ok").addEventListener("click", hideBookingConfirmModal);
+    $("booking-confirm-modal").addEventListener("click", (event) => {
+      if (event.target === $("booking-confirm-modal")) hideBookingConfirmModal();
     });
     $("barber-select").addEventListener("change", loadAvailability);
     $("date-input").addEventListener("change", loadAvailability);
