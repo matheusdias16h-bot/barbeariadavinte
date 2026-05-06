@@ -564,6 +564,15 @@
         font-weight: 800;
         line-height: 1.35;
       }
+      .agenda-customer-link {
+        color: inherit;
+        text-decoration: underline;
+        text-underline-offset: 3px;
+        pointer-events: auto;
+      }
+      .agenda-customer-link:hover {
+        opacity: 0.82;
+      }
       .agenda-empty {
         padding: 18px;
         border: 1px dashed rgba(255,255,255,0.1);
@@ -1751,10 +1760,14 @@
         const endMinutes = startMinutes + duration;
         const endHour = String(Math.floor(endMinutes / 60)).padStart(2, "0");
         const endMinute = String(endMinutes % 60).padStart(2, "0");
+        const customerMessage = `Ola, ${item.client_name}! Aqui e da Barbearia da Vinte sobre o seu horario do dia ${formatDateBr(item.date)} as ${item.time} com ${item.barber_name}.`;
+        const customerLink = item.client_phone
+          ? `<a class="agenda-customer-link" href="${escapeHtml(clientWhatsappUrl(item.client_phone, customerMessage))}" target="_blank" rel="noreferrer">${escapeHtml(item.client_name)}</a>`
+          : escapeHtml(item.client_name);
         return `
           <article class="agenda-booking-card ${item.plan_booking ? "plan" : "regular"}" style="top:${top + 2}px;height:${height}px;">
             <strong>${escapeHtml(item.time)} - ${escapeHtml(`${endHour}:${endMinute}`)}</strong>
-            <span>${escapeHtml(item.service_name)} - ${escapeHtml(item.client_name)}</span>
+            <span>${escapeHtml(item.service_name)} - ${customerLink}</span>
           </article>
         `;
       }).join("");
