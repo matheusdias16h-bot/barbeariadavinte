@@ -2,6 +2,7 @@
   "name": "Barbearia da Vinte",
   "short_name": "Da Vinte",
   "description": "Agende corte, barba e outros servicos da Barbearia da Vinte direto pelo app.",
+  "id": "/",
   "lang": "pt-BR",
   "start_url": "/",
   "scope": "/",
@@ -11,9 +12,15 @@
   "theme_color": "#030303",
   "icons": [
     {
-      "src": "/static/img/logo-barbeiro.jpg.jpeg",
+      "src": "/static/img/pwa/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/img/pwa/icon-512.png",
       "sizes": "512x512",
-      "type": "image/jpeg",
+      "type": "image/png",
       "purpose": "any maskable"
     }
   ]

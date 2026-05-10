@@ -1,8 +1,9 @@
-const CACHE_NAME = "barbearia-da-vinte-v1";
+const CACHE_NAME = "barbearia-da-vinte-v2";
 const APP_SHELL = [
   "/",
   "/manifest.webmanifest",
-  "/static/img/logo-barbeiro.jpg.jpeg"
+  "/static/img/pwa/icon-192.png",
+  "/static/img/pwa/icon-512.png"
 ];
 
 self.addEventListener("install", (event) => {
