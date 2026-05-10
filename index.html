@@ -4,6 +4,13 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="description" content="Barbearia da Vinte: agende corte, barba e outros servicos direto pelo site." />
+  <meta name="theme-color" content="#030303" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Da Vinte" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="icon" href="/static/img/logo-barbeiro.jpg.jpeg" />
+  <link rel="apple-touch-icon" href="/static/img/logo-barbeiro.jpg.jpeg" />
   <title>Barbearia da Vinte | Agendamento online</title>
   <style>
     :root {
@@ -141,6 +148,13 @@
     .btn.secondary { background: transparent; color: var(--gold-2); border: 1px solid var(--gold); }
     .btn.ghost { background: rgba(255,255,255,0.06); color: var(--ink); border: 1px solid rgba(255,255,255,0.1); }
     .hero-actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 26px; }
+    .install-hint {
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 0.92rem;
+      line-height: 1.6;
+      max-width: 460px;
+    }
     .info-card {
       margin-top: 36px;
       background: rgba(11,11,11,0.82);
@@ -698,7 +712,9 @@
             <div class="hero-actions">
               <a class="btn" href="#agendamento">Agendar horario</a>
               <a class="btn secondary" href="#servicos">Ver servicos</a>
+              <button class="btn ghost" id="install-app-button" type="button" hidden>Instalar app</button>
             </div>
+            <p class="install-hint" id="install-app-hint">Abra no celular e instale para usar a Barbearia da Vinte como aplicativo.</p>
           </div>
           <aside class="info-card">
             <div class="info-line"><span class="ico">◷</span><p><strong>Atendimento</strong><span id="info-hours">Ter - Dom: 09h as 20h</span></p></div>
@@ -1338,6 +1354,19 @@
       el.className = "message " + type;
     }
 
+    function updateInstallAppButton() {
+      const button = $("install-app-button");
+      const hint = $("install-app-hint");
+      if (!button || !hint) return;
+      const installed = window.matchMedia?.("(display-mode: standalone)")?.matches || window.navigator.standalone;
+      button.hidden = !deferredInstallPrompt || installed;
+      hint.textContent = installed
+        ? "Aplicativo instalado neste dispositivo."
+        : deferredInstallPrompt
+          ? "Instale a Barbearia da Vinte para abrir mais rapido e usar como app."
+          : "Abra no celular e instale para usar a Barbearia da Vinte como aplicativo.";
+    }
+
     function hideBookingConfirmModal() {
       if (!$("booking-confirm-modal")) return;
       $("booking-confirm-modal").hidden = true;
@@ -1459,6 +1488,7 @@
     }
 
     const agendaTimelineTimes = buildAgendaTimelineTimes();
+    let deferredInstallPrompt = null;
 
     function setClientTab(tab) {
       state.clientTab = tab;
@@ -3330,10 +3360,41 @@
       updateAdminView();
     };
 
+    $("install-app-button")?.addEventListener("click", async () => {
+      if (!deferredInstallPrompt) {
+        updateInstallAppButton();
+        return;
+      }
+      deferredInstallPrompt.prompt();
+      try {
+        await deferredInstallPrompt.userChoice;
+      } catch {}
+      deferredInstallPrompt = null;
+      updateInstallAppButton();
+    });
+
+    window.addEventListener("beforeinstallprompt", (event) => {
+      event.preventDefault();
+      deferredInstallPrompt = event;
+      updateInstallAppButton();
+    });
+
+    window.addEventListener("appinstalled", () => {
+      deferredInstallPrompt = null;
+      updateInstallAppButton();
+    });
+
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("/sw.js").catch(() => {});
+      });
+    }
+
     setDefaultDate();
     if (resetToken) setClientTab("reset");
     checkClientSession().catch(() => {});
     loadPublicData().catch((error) => setMessage($("booking-message"), error.message, "err"));
+    updateInstallAppButton();
     if (location.pathname === "/admin") openAdmin();
   </script>
 </body>

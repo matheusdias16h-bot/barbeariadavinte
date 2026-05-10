@@ -47,6 +47,8 @@ def resolve_db_path():
 DB_PATH = resolve_db_path()
 INDEX_PATH = BASE_DIR / "index.html"
 STATIC_DIR = BASE_DIR / "static"
+MANIFEST_PATH = STATIC_DIR / "manifest.webmanifest"
+SERVICE_WORKER_PATH = STATIC_DIR / "sw.js"
 HOST = os.environ.get("HOST", "127.0.0.1")
 PORT = int(os.environ.get("PORT", "8000"))
 REMINDER_LOOKAHEAD_MINUTES = 60
@@ -1836,6 +1838,10 @@ class AppHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         if parsed.path in {"/", "/index.html", "/admin"}:
             return self.serve_file(INDEX_PATH, "text/html; charset=utf-8")
+        if parsed.path == "/manifest.webmanifest":
+            return self.serve_file(MANIFEST_PATH, "application/manifest+json; charset=utf-8")
+        if parsed.path == "/sw.js":
+            return self.serve_file(SERVICE_WORKER_PATH, "application/javascript; charset=utf-8")
         if parsed.path.startswith("/static/"):
             return self.serve_static(parsed.path)
         if parsed.path == "/api/public-data":
@@ -1939,8 +1945,14 @@ class AppHandler(BaseHTTPRequestHandler):
             content_type = "image/jpeg"
         elif path.suffix.lower() == ".png":
             content_type = "image/png"
+        elif path.suffix.lower() == ".svg":
+            content_type = "image/svg+xml; charset=utf-8"
         elif path.suffix.lower() == ".css":
             content_type = "text/css; charset=utf-8"
+        elif path.suffix.lower() == ".js":
+            content_type = "application/javascript; charset=utf-8"
+        elif path.suffix.lower() in {".webmanifest", ".json"}:
+            content_type = "application/manifest+json; charset=utf-8"
         return self.serve_file(path, content_type)
 
     def handle_create_appointment(self):
