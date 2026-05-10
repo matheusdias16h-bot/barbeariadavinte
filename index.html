@@ -155,6 +155,47 @@
       line-height: 1.6;
       max-width: 460px;
     }
+    .install-help-dialog {
+      max-width: 560px;
+      text-align: left;
+    }
+    .install-help-dialog strong {
+      display: block;
+      margin-bottom: 10px;
+    }
+    .install-help-intro {
+      color: var(--muted);
+      line-height: 1.7;
+      margin-bottom: 18px;
+    }
+    .install-steps {
+      display: grid;
+      gap: 12px;
+      margin: 16px 0 22px;
+    }
+    .install-step {
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 6px;
+      background: rgba(255,255,255,0.03);
+      padding: 14px 16px;
+    }
+    .install-step small {
+      display: block;
+      color: var(--gold-2);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 6px;
+    }
+    .install-step p {
+      color: var(--ink);
+      line-height: 1.7;
+    }
+    .install-help-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
     .info-card {
       margin-top: 36px;
       background: rgba(11,11,11,0.82);
@@ -713,6 +754,7 @@
               <a class="btn" href="#agendamento">Agendar horario</a>
               <a class="btn secondary" href="#servicos">Ver servicos</a>
               <button class="btn ghost" id="install-app-button" type="button" hidden>Instalar app</button>
+              <button class="btn secondary" id="install-help-button" type="button">Como instalar</button>
             </div>
             <p class="install-hint" id="install-app-hint">Abra no celular e instale para usar a Barbearia da Vinte como aplicativo.</p>
           </div>
@@ -872,6 +914,17 @@
       <strong id="booking-confirm-title">Horario confirmado</strong>
       <p id="booking-confirm-text">Seu horario foi confirmado com sucesso.</p>
       <button class="btn" id="booking-confirm-ok" type="button">OK</button>
+    </div>
+  </section>
+
+  <section class="booking-confirm-modal" id="install-help-modal" hidden role="dialog" aria-modal="true" aria-labelledby="install-help-title">
+    <div class="booking-confirm-dialog install-help-dialog">
+      <strong id="install-help-title">Instalar app da barbearia</strong>
+      <p class="install-help-intro" id="install-help-intro">Use o passo a passo abaixo para instalar a Barbearia da Vinte como aplicativo no seu aparelho.</p>
+      <div class="install-steps" id="install-help-steps"></div>
+      <div class="install-help-actions">
+        <button class="btn ghost" id="install-help-close" type="button">Fechar</button>
+      </div>
     </div>
   </section>
 
@@ -1365,6 +1418,102 @@
         : deferredInstallPrompt
           ? "Instale a Barbearia da Vinte para abrir mais rapido e usar como app."
           : "Abra no celular e instale para usar a Barbearia da Vinte como aplicativo.";
+    }
+
+    function getInstallPlatform() {
+      const ua = navigator.userAgent || "";
+      const isIos = /iPhone|iPad|iPod/i.test(ua);
+      const isAndroid = /Android/i.test(ua);
+      const isSafari = /Safari/i.test(ua) && !/Chrome|CriOS|Edg|OPR/i.test(ua);
+      if (isIos) return isSafari ? "ios-safari" : "ios";
+      if (isAndroid) return "android";
+      return "desktop";
+    }
+
+    function getInstallSteps() {
+      const platform = getInstallPlatform();
+      if (platform === "ios-safari") {
+        return {
+          intro: "No iPhone, a instalacao costuma ser feita pelo menu de compartilhamento do Safari.",
+          steps: [
+            { label: "Passo 1", text: "Abra este site no Safari." },
+            { label: "Passo 2", text: "Toque no botao Compartilhar do iPhone." },
+            { label: "Passo 3", text: "Escolha Adicionar a Tela de Inicio." },
+            { label: "Passo 4", text: "Confirme em Adicionar para instalar o app." }
+          ]
+        };
+      }
+      if (platform === "ios") {
+        return {
+          intro: "No iPhone, o caminho mais confiavel para instalar e abrir este site no Safari.",
+          steps: [
+            { label: "Passo 1", text: "Abra este site no Safari." },
+            { label: "Passo 2", text: "Toque em Compartilhar." },
+            { label: "Passo 3", text: "Escolha Adicionar a Tela de Inicio." },
+            { label: "Passo 4", text: "Confirme para instalar o app." }
+          ]
+        };
+      }
+      if (platform === "android") {
+        return {
+          intro: deferredInstallPrompt
+            ? "Seu navegador ja pode instalar o app agora mesmo."
+            : "No Android, a instalacao pode aparecer pelo botao Instalar app ou pelo menu do navegador.",
+          steps: deferredInstallPrompt
+            ? [
+                { label: "Passo 1", text: "Toque em Instalar app nesta tela." },
+                { label: "Passo 2", text: "Confirme a instalacao quando o navegador pedir." },
+                { label: "Passo 3", text: "Abra pela tela inicial do celular." }
+              ]
+            : [
+                { label: "Passo 1", text: "Abra o menu do navegador no canto superior." },
+                { label: "Passo 2", text: "Procure Instalar app ou Adicionar a tela inicial." },
+                { label: "Passo 3", text: "Confirme para instalar a Barbearia da Vinte." }
+              ]
+        };
+      }
+      return {
+        intro: deferredInstallPrompt
+          ? "No computador, seu navegador ja pode instalar este site como aplicativo."
+          : "No computador, a instalacao costuma aparecer na barra do navegador ou no menu.",
+        steps: deferredInstallPrompt
+          ? [
+              { label: "Passo 1", text: "Clique em Instalar app nesta tela." },
+              { label: "Passo 2", text: "Confirme a instalacao do navegador." },
+              { label: "Passo 3", text: "Abra a Barbearia da Vinte como aplicativo da area de trabalho." }
+            ]
+          : [
+              { label: "Passo 1", text: "Procure o icone de instalar na barra de endereco do navegador." },
+              { label: "Passo 2", text: "Ou abra o menu e escolha Instalar app." },
+              { label: "Passo 3", text: "Confirme para adicionar o atalho como aplicativo." }
+            ]
+      };
+    }
+
+    function renderInstallHelpModal() {
+      const intro = $("install-help-intro");
+      const steps = $("install-help-steps");
+      if (!intro || !steps) return;
+      const content = getInstallSteps();
+      intro.textContent = content.intro;
+      steps.innerHTML = content.steps.map((step) => `
+        <article class="install-step">
+          <small>${escapeHtml(step.label)}</small>
+          <p>${escapeHtml(step.text)}</p>
+        </article>
+      `).join("");
+    }
+
+    function showInstallHelpModal() {
+      if (!$("install-help-modal")) return;
+      renderInstallHelpModal();
+      $("install-help-modal").hidden = false;
+      $("install-help-close")?.focus();
+    }
+
+    function hideInstallHelpModal() {
+      if (!$("install-help-modal")) return;
+      $("install-help-modal").hidden = true;
     }
 
     function hideBookingConfirmModal() {
@@ -2702,6 +2851,11 @@
     $("booking-confirm-ok").addEventListener("click", hideBookingConfirmModal);
     $("booking-confirm-modal").addEventListener("click", (event) => {
       if (event.target === $("booking-confirm-modal")) hideBookingConfirmModal();
+    });
+    $("install-help-button")?.addEventListener("click", showInstallHelpModal);
+    $("install-help-close")?.addEventListener("click", hideInstallHelpModal);
+    $("install-help-modal")?.addEventListener("click", (event) => {
+      if (event.target === $("install-help-modal")) hideInstallHelpModal();
     });
     $("barber-select").addEventListener("change", loadAvailability);
     $("date-input").addEventListener("change", loadAvailability);
