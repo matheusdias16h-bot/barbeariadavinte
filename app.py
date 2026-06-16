@@ -1,4 +1,4 @@
-﻿import hashlib
+import hashlib
 import json
 import os
 import secrets
@@ -16,6 +16,7 @@ from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
+from zoneinfo import ZoneInfo
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -51,6 +52,7 @@ MANIFEST_PATH = STATIC_DIR / "manifest.webmanifest"
 SERVICE_WORKER_PATH = STATIC_DIR / "sw.js"
 HOST = os.environ.get("HOST", "127.0.0.1")
 PORT = int(os.environ.get("PORT", "8000"))
+APP_TIMEZONE = ZoneInfo(os.environ.get("APP_TIMEZONE", "America/Sao_Paulo"))
 REMINDER_LOOKAHEAD_MINUTES = 60
 REMINDER_POLL_SECONDS = 60
 PLAN_MAX_HAIRCUTS = 4
@@ -134,6 +136,14 @@ def password_hash(value):
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def local_now() -> datetime:
+    return datetime.now(APP_TIMEZONE)
+
+
+def local_timestamp() -> str:
+    return local_now().strftime("%d/%m/%Y, %H:%M")
 
 
 def prepare_db_path():
@@ -630,7 +640,7 @@ def set_blocked_date(date_text, blocked, note=""):
                 VALUES (?, ?, ?)
                 ON CONFLICT(date) DO UPDATE SET note = excluded.note
                 """,
-                (date_text, str(note or "").strip(), datetime.now().strftime("%d/%m/%Y, %H:%M")),
+                (date_text, str(note or "").strip(), local_timestamp()),
             )
             cancel_appointments_for_blocked_date(conn, date_text, str(note or "").strip())
         else:
@@ -661,7 +671,7 @@ def set_blocked_barber_date(barber_id, date_text, blocked, note=""):
                 VALUES (?, ?, ?, ?)
                 ON CONFLICT(barber_id, date) DO UPDATE SET note = excluded.note
                 """,
-                (barber_id, date_text, str(note or "").strip(), datetime.now().strftime("%d/%m/%Y, %H:%M")),
+                (barber_id, date_text, str(note or "").strip(), local_timestamp()),
             )
             cancel_appointments_for_blocked_barber_date(conn, barber_id, date_text, str(note or "").strip())
         else:
@@ -860,7 +870,7 @@ def read_customers(conn):
     rows = conn.execute(
         "SELECT id, name, email, phone, cpf, created_at FROM customers ORDER BY name COLLATE NOCASE"
     ).fetchall()
-    today = datetime.now().date()
+    today = local_now().date()
     for row in rows:
         customer = dict(row)
         last_haircut = conn.execute(
@@ -917,6 +927,15 @@ def digits_only(value):
     return "".join(ch for ch in str(value or "") if ch.isdigit())
 
 
+def normalize_brazil_phone_digits(value):
+    digits = digits_only(value)
+    if digits.startswith("55") and len(digits) > 11:
+        digits = digits[2:]
+    if digits.startswith("0") and len(digits) > 11:
+        digits = digits[1:]
+    return digits
+
+
 def parse_appointment_datetime(date_text, time_text):
     return datetime.strptime(f"{date_text} {time_text}", "%Y-%m-%d %H:%M")
 
@@ -930,7 +949,7 @@ def add_one_month(date_text):
 
 
 def deactivate_expired_plans(conn):
-    today = datetime.now().date().isoformat()
+    today = local_now().date().isoformat()
     conn.execute(
         "UPDATE monthly_plans SET active = 0 WHERE active = 1 AND end_date < ?",
         (today,),
@@ -969,11 +988,11 @@ def is_canceled_plan(plan_row):
         return False
     if int(plan_row.get("active") or 0):
         return False
-    return str(plan_row.get("end_date") or "") >= datetime.now().date().isoformat()
+    return str(plan_row.get("end_date") or "") >= local_now().date().isoformat()
 
 
 def read_barber_summaries(conn):
-    today = datetime.now().date()
+    today = local_now().date()
     week_start = today - timedelta(days=today.weekday())
     month_start = today.replace(day=1)
     appointments = read_appointments(conn)
@@ -1048,8 +1067,8 @@ def get_availability_payload(barber_id, date_text, service_ids=None):
     except ValueError:
         return {"slots": [], "blocked": False, "message": ""}
     weekday = appointment_date.weekday()
-    today = datetime.now().date()
-    now_time = datetime.now().strftime("%H:%M")
+    today = local_now().date()
+    now_time = local_now().strftime("%H:%M")
     with db_connection() as conn:
         blocked_entry = get_blocked_date_entry(conn, date_text)
         if blocked_entry:
@@ -1149,7 +1168,7 @@ def create_customer(payload):
             INSERT INTO customers (name, email, phone, password_hash, cpf, created_at)
             VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (name, email, phone, password_hash(password), cpf, datetime.now().strftime("%d/%m/%Y, %H:%M")),
+            (name, email, phone, password_hash(password), cpf, local_timestamp()),
         )
         return {
             "id": cursor.lastrowid,
@@ -1157,7 +1176,7 @@ def create_customer(payload):
             "email": email,
             "phone": phone,
             "cpf": cpf,
-            "created_at": datetime.now().strftime("%d/%m/%Y, %H:%M"),
+            "created_at": local_timestamp(),
         }
 
 
@@ -1173,12 +1192,13 @@ def get_customer_by_id(customer_id):
 def authenticate_customer(identifier, password):
     identifier_text = str(identifier).strip()
     identifier_digits = digits_only(identifier_text)
+    identifier_phone = normalize_brazil_phone_digits(identifier_text)
     with db_connection() as conn:
         row = conn.execute(
             """
             SELECT id, name, email, phone, cpf, password_hash, created_at
             FROM customers
-            WHERE email = ? OR cpf = ?
+            WHERE lower(email) = ? OR cpf = ?
             LIMIT 1
             """,
             (identifier_text.lower(), identifier_digits),
@@ -1188,7 +1208,7 @@ def authenticate_customer(identifier, password):
                 "SELECT id, name, email, phone, cpf, password_hash, created_at FROM customers"
             ).fetchall()
             for item in rows:
-                if digits_only(item["phone"]) == identifier_digits:
+                if digits_only(item["cpf"]) == identifier_digits or normalize_brazil_phone_digits(item["phone"]) == identifier_phone:
                     row = item
                     break
         if not row or row["password_hash"] != password_hash(password):
@@ -1302,7 +1322,7 @@ def create_barber_review(payload, customer):
                 int(appointment["barber_id"]),
                 rating,
                 comment,
-                datetime.now().strftime("%d/%m/%Y, %H:%M"),
+                local_timestamp(),
             ),
         )
     return {"ok": True}
@@ -1426,7 +1446,7 @@ def save_monthly_plan(payload):
             INSERT INTO monthly_plans (customer_id, barber_id, plan_name, plan_price, start_date, end_date, note, active, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)
             """,
-            (customer_id, barber_id, plan_name, plan_price, start_date, end_date, note, datetime.now().strftime("%d/%m/%Y, %H:%M")),
+            (customer_id, barber_id, plan_name, plan_price, start_date, end_date, note, local_timestamp()),
         )
 
 
@@ -1451,7 +1471,7 @@ def normalize_money(value):
 
 def is_monthly_plan_service_name(name):
     normalized = str(name or "").strip().lower()
-    return "ja tenho mensal" in normalized or "já tenho mensal" in normalized
+    return "mensal" in normalized and "tenho" in normalized
 
 
 def save_admin_data(payload):
@@ -1578,7 +1598,7 @@ def create_appointment(payload, customer=None):
     if not any(slot["time"] == time and slot["available"] for slot in available):
         raise ValueError("Esse horario acabou de ficar indisponivel. Escolha outro horario.")
 
-    created_at = datetime.now().strftime("%d/%m/%Y, %H:%M")
+    created_at = local_timestamp()
     with db_connection() as conn:
         customer_id = int(customer["id"]) if customer else None
         services = get_selected_service_rows(conn, service_ids)
@@ -1664,7 +1684,7 @@ def send_and_log_email(conn, appointment_id, recipient, subject, body, reply_to=
         INSERT INTO email_outbox (appointment_id, recipient, subject, body, status, error, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
-        (appointment_id, recipient, subject, body, status, error, datetime.now().strftime("%d/%m/%Y, %H:%M")),
+        (appointment_id, recipient, subject, body, status, error, local_timestamp()),
     )
 
 
@@ -1733,7 +1753,7 @@ def send_email(recipient, subject, body, reply_to=""):
 
 
 def send_due_reminders():
-    now = datetime.now()
+    now = local_now().replace(tzinfo=None)
     with db_connection() as conn:
         rows = conn.execute(
             """
@@ -1784,7 +1804,7 @@ def send_due_reminders():
             send_and_log_email(conn, appointment["id"], appointment["client_email"], subject, body)
             conn.execute(
                 "UPDATE appointments SET reminder_sent_at = ? WHERE id = ?",
-                (datetime.now().strftime("%d/%m/%Y, %H:%M"), appointment["id"]),
+                (local_timestamp(), appointment["id"]),
             )
 
 
@@ -2191,7 +2211,7 @@ class AppHandler(BaseHTTPRequestHandler):
                 return self.send_error_json(HTTPStatus.BAD_REQUEST, "Agendamento nao encontrado para esse aviso.")
             conn.execute(
                 "UPDATE appointments SET cancel_whatsapp_sent_at = ? WHERE id = ?",
-                (datetime.now().strftime("%d/%m/%Y, %H:%M"), appointment_id),
+                (local_timestamp(), appointment_id),
             )
         return self.send_json(HTTPStatus.OK, read_public_data(include_admin=True))
 

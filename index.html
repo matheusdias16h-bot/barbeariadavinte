@@ -1328,7 +1328,7 @@
 
     function isMonthlyPlanService(service) {
       const name = String(service?.name || "").toLowerCase();
-      return name.includes("ja tenho mensal") || name.includes("já tenho mensal");
+      return name.includes("mensal") && name.includes("tenho");
     }
 
     function getLockedPlanBarberId() {
@@ -1339,7 +1339,7 @@
     function isCanceledPlan(plan) {
       if (!plan) return false;
       if (plan.active) return false;
-      const today = new Date().toISOString().slice(0, 10);
+      const today = dateToLocalIso();
       return String(plan.end_date || "") >= today;
     }
 
@@ -1545,6 +1545,13 @@
       return `${day}/${month}/${year}`;
     }
 
+    function dateToLocalIso(date = new Date()) {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const day = String(date.getDate()).padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    }
+
     function addOneMonth(dateText) {
       if (!dateText) return "";
       const [yearText, monthText, dayText] = dateText.split("-");
@@ -1555,7 +1562,7 @@
       const target = new Date(year, month, 0);
       const daysInTargetMonth = target.getDate();
       const nextMonthDate = new Date(year, month, Math.min(day, daysInTargetMonth));
-      return nextMonthDate.toISOString().slice(0, 10);
+      return dateToLocalIso(nextMonthDate);
     }
 
     function getBlockedDateEntry(dateText) {
@@ -1845,8 +1852,8 @@
     function setDefaultDate() {
       const date = new Date();
       date.setDate(date.getDate() + 1);
-      $("date-input").min = new Date().toISOString().slice(0, 10);
-      $("date-input").value = date.toISOString().slice(0, 10);
+      $("date-input").min = dateToLocalIso();
+      $("date-input").value = dateToLocalIso(date);
     }
 
     async function openAdmin() {
@@ -1937,7 +1944,7 @@
     }
 
     function ensureAgendaViewDefaults() {
-      const today = new Date().toISOString().slice(0, 10);
+      const today = dateToLocalIso();
       if (!state.agendaView.date) {
         state.agendaView.date = state.appointmentFilters.date || today;
       }
@@ -1966,7 +1973,7 @@
       $("agenda-visual-title").textContent = formatMonthYear(selectedDate);
       $("agenda-week-strip").innerHTML = Array.from({ length: 7 }, (_, offset) => {
         const date = addDays(weekStart, offset);
-        const iso = date.toISOString().slice(0, 10);
+        const iso = dateToLocalIso(date);
         return `
           <button class="agenda-week-day ${iso === state.agendaView.date ? "active" : ""}" data-agenda-date="${iso}" type="button">
             <small>${escapeHtml(formatWeekdayLabel(date))}</small>
@@ -2029,7 +2036,7 @@
     }
 
     function renderOverviewStats() {
-      const today = new Date().toISOString().slice(0, 10);
+      const today = dateToLocalIso();
       const activeAppointments = getActiveAgendaAppointments();
       const countablePlans = Array.isArray(state.plans) ? state.plans.filter((plan) => !isCanceledPlan(plan)) : [];
       const todayCount = activeAppointments.filter((item) => item.date === today).length;
@@ -2232,7 +2239,7 @@
 
     function renderBlockedDates() {
       if (!$("blocked-date-input")) return;
-      const today = new Date().toISOString().slice(0, 10);
+      const today = dateToLocalIso();
       if (!$("blocked-date-input").value) {
         $("blocked-date-input").value = today;
       }
@@ -2300,7 +2307,7 @@
 
     function renderBlockedDates() {
       if (!$("blocked-date-input")) return;
-      const today = new Date().toISOString().slice(0, 10);
+      const today = dateToLocalIso();
       if (!$("blocked-date-input").value) {
         $("blocked-date-input").value = today;
       }
@@ -2335,7 +2342,7 @@
 
     function renderBlockedBarberDates() {
       if (!$("blocked-barber-date-input") || !$("blocked-barber-select")) return;
-      const today = new Date().toISOString().slice(0, 10);
+      const today = dateToLocalIso();
       if (!$("blocked-barber-date-input").value) {
         $("blocked-barber-date-input").value = today;
       }
@@ -2576,7 +2583,7 @@
       }
       barberSelect.disabled = Boolean(activePlan);
 
-      const today = new Date().toISOString().slice(0, 10);
+      const today = dateToLocalIso();
       $("admin-booking-date").min = today;
       $("admin-booking-date").value = previousDate || today;
       $("admin-booking-notes").value = previousNotes;
@@ -2689,7 +2696,7 @@
     $("agenda-week-prev").addEventListener("click", () => {
       ensureAgendaViewDefaults();
       const baseDate = new Date(`${state.agendaView.date}T00:00:00`);
-      state.agendaView.date = addDays(baseDate, -7).toISOString().slice(0, 10);
+      state.agendaView.date = dateToLocalIso(addDays(baseDate, -7));
       state.appointmentFilters.date = state.agendaView.date;
       renderAgendaVisual();
       renderAppointments();
@@ -2697,13 +2704,13 @@
     $("agenda-week-next").addEventListener("click", () => {
       ensureAgendaViewDefaults();
       const baseDate = new Date(`${state.agendaView.date}T00:00:00`);
-      state.agendaView.date = addDays(baseDate, 7).toISOString().slice(0, 10);
+      state.agendaView.date = dateToLocalIso(addDays(baseDate, 7));
       state.appointmentFilters.date = state.agendaView.date;
       renderAgendaVisual();
       renderAppointments();
     });
     $("agenda-week-today").addEventListener("click", () => {
-      state.agendaView.date = new Date().toISOString().slice(0, 10);
+      state.agendaView.date = dateToLocalIso();
       state.appointmentFilters.date = state.agendaView.date;
       renderAgendaVisual();
       renderAppointments();
@@ -3478,7 +3485,7 @@
       }
       barberSelect.disabled = Boolean(lockedAdminPlan);
 
-      const today = new Date().toISOString().slice(0, 10);
+      const today = dateToLocalIso();
       $("admin-booking-date").min = today;
       $("admin-booking-date").value = previousDate || today;
       $("admin-booking-notes").value = previousNotes;
