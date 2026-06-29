@@ -1372,7 +1372,12 @@ def create_password_reset_token(identifier, base_url):
             f"Esse link expira em 1 hora.\n"
             f"Se voce nao pediu essa troca, pode ignorar este e-mail."
         )
-        send_and_log_email(conn, None, customer["email"], subject, body)
+        result = send_and_log_email(conn, None, customer["email"], subject, body)
+        if result.get("status") != "sent":
+            raise ValueError(
+                "Nao consegui enviar o e-mail de recuperacao agora. "
+                "Confira as configuracoes de SMTP no Render ou tente novamente em alguns minutos."
+            )
 
 
 def reset_customer_password(token, new_password):
@@ -1671,7 +1676,7 @@ def create_appointment(payload, customer=None):
 def send_and_log_email(conn, appointment_id, recipient, subject, body, reply_to=""):
     recipient = str(recipient or "").strip()
     if not recipient:
-        return
+        return {"status": "skipped", "error": "Destinatario vazio."}
     status = "queued"
     error = ""
     try:
@@ -1686,6 +1691,7 @@ def send_and_log_email(conn, appointment_id, recipient, subject, body, reply_to=
         """,
         (appointment_id, recipient, subject, body, status, error, local_timestamp()),
     )
+    return {"status": status, "error": error}
 
 
 def notify_barber(conn, appointment):
@@ -1745,8 +1751,10 @@ def send_email(recipient, subject, body, reply_to=""):
     if reply_to:
         message["Reply-To"] = reply_to
     message.set_content(body)
-    with smtplib.SMTP(host, port, timeout=12) as smtp:
-        smtp.starttls()
+    smtp_class = smtplib.SMTP_SSL if port == 465 else smtplib.SMTP
+    with smtp_class(host, port, timeout=12) as smtp:
+        if port != 465:
+            smtp.starttls()
         if user and password:
             smtp.login(user, password)
         smtp.send_message(message)
@@ -1979,8 +1987,11 @@ class AppHandler(BaseHTTPRequestHandler):
         payload = self.read_json_body()
         if payload is None:
             return
+        customer = self.get_current_customer()
+        if not customer:
+            return self.send_error_json(HTTPStatus.UNAUTHORIZED, "Entre ou crie sua conta para marcar horario.")
         try:
-            appointment = create_appointment(payload, customer=self.get_current_customer())
+            appointment = create_appointment(payload, customer=customer)
         except ValueError as exc:
             return self.send_error_json(HTTPStatus.BAD_REQUEST, str(exc))
         return self.send_json(HTTPStatus.CREATED, {"appointment": appointment})
