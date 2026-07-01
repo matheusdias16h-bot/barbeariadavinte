@@ -2,9 +2,31 @@ services:
   - type: web
     name: barbearia-da-vinte
     env: python
-    plan: free
+    plan: starter
     buildCommand: pip install -r requirements.txt
     startCommand: python app.py
+    disk:
+      name: barbearia-da-vinte-data
+      mountPath: /var/data
+      sizeGB: 1
     envVars:
       - key: HOST
         value: 0.0.0.0
+      - key: DB_PATH
+        value: /var/data/barbearia_da_vinte_data.sqlite
+      - key: APP_TIMEZONE
+        value: America/Sao_Paulo
+      - key: ADMIN_USER
+        sync: false
+      - key: ADMIN_PASS
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false
